@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobReviewAssistant</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>🔍 JobReviewAssistant</h1>
+      <p class="subtitle">Job Posting Analysis</p>
+    </header>
+
+    <main class="main">
+      <button id="analyzeBtn" class="analyze-btn">
+        <span class="btn-icon">🔍</span>
+        Analyze Job Posting
+      </button>
+
+      <div id="extractionStatus" class="extraction-status hidden">
+        <span id="statusText">Extracted: 0 chars</span>
+      </div>
+
+      <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <p>Analyzing job posting...</p>
+      </div>
+
+      <div id="error" class="error hidden">
+        <span class="error-icon">⚠️</span>
+        <p id="errorMessage"></p>
+        <button id="retryBtn" class="retry-btn">Retry</button>
+      </div>
+
+      <div id="results" class="results hidden">
+        <!-- Job Title -->
+        <section class="result-section title-section">
+          <h2 id="jobTitle" class="job-title">--</h2>
+        </section>
+
+        <!-- Job Facts -->
+        <section class="result-section facts-section">
+          <h3>📌 Job Info</h3>
+          <div class="facts-grid">
+            <div class="fact-item">
+              <span class="fact-label">📍 Location</span>
+              <span id="factLocation" class="fact-value">--</span>
+            </div>
+            <div class="fact-item">
+              <span class="fact-label">⏱️ Duration</span>
+              <span id="factDuration" class="fact-value">--</span>
+            </div>
+            <div class="fact-item">
+              <span class="fact-label">💰 Salary</span>
+              <span id="factSalary" class="fact-value">--</span>
+            </div>
+            <div class="fact-item">
+              <span class="fact-label">🏢 Arrangement</span>
+              <span id="factArrangement" class="fact-value">--</span>
+            </div>
+          </div>
+          <a id="applyLink" href="#" target="_blank" class="apply-link hidden">📝 Apply</a>
+        </section>
+
+        <!-- Tech Stack -->
+        <section class="result-section">
+          <h3>💻 Tech Stack</h3>
+          <div id="techStack" class="tech-stack">
+            <p class="no-tech">No technologies detected</p>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p>Local-first • Code Extraction</p>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>
