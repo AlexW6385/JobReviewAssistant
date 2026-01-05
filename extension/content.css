@@ -72,6 +72,22 @@
     line-height: 1.4;
 }
 
+.jra-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.jra-tag {
+    background: #e0e7ff;
+    color: #4338ca;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
 /* Close Button Override */
 #jra-local-close {
     background: none;

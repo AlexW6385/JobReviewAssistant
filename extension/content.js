@@ -10,6 +10,7 @@
 class LocalWaterlooOverlay {
     constructor() {
         this.data = null;
+        this.lastContentHash = "";
         this.checkAndRun();
     }
 
@@ -18,29 +19,50 @@ class LocalWaterlooOverlay {
             return;
         }
 
-        const runIfFound = () => {
+        // Persistent parsing function
+        const attemptParse = () => {
             const bodyText = document.body.innerText;
-            if (bodyText.includes("JOB POSTING INFORMATION") || bodyText.includes("Job Posting Information")) {
-                console.log('[JRA-Local] JD Marker found. Parsing...');
-                this.parse(bodyText);
-                this.injectCard();
-                return true;
+            // Check if JD is present
+            if (!bodyText.includes("JOB POSTING INFORMATION") && !bodyText.includes("Job Posting Information")) {
+                // If we had a card but lost the JD (e.g. navigated away), ensure card is gone
+                if (this.lastContentHash) {
+                    this.removeCard();
+                    this.lastContentHash = "";
+                }
+                return;
             }
-            return false;
+
+            // Simple "hash" to detect content change (length + first 200 chars + title check)
+            const titleSnippet = bodyText.match(/Job Title:\s*([^\n]+)/)?.[1] || "";
+            const currentHash = bodyText.length + "-" + titleSnippet;
+
+            if (currentHash === this.lastContentHash) return; // No change
+
+            // Content changed!
+            console.log('[JRA-Local] New JD Content detected. Parsing...', titleSnippet);
+            this.lastContentHash = currentHash;
+            this.removeCard(); // Clear old
+            this.parse(bodyText); // Parse new
+            this.injectCard(); // Show new
         };
 
-        if (runIfFound()) return;
+        // 1. Try immediately
+        attemptParse();
 
-        console.log('[JRA-Local] Marker not found yet, observing changes...');
+        // 2. Persistent Observer (No timeout)
+        let timeout;
         const observer = new MutationObserver((mutations) => {
-            if (runIfFound()) {
-                observer.disconnect();
-                console.log('[JRA-Local] Observer matches found, disconnected.');
-            }
+            clearTimeout(timeout);
+            timeout = setTimeout(attemptParse, 500); // Debounce check
         });
 
         observer.observe(document.body, { childList: true, subtree: true });
-        setTimeout(() => observer.disconnect(), 10000);
+        console.log('[JRA-Local] Persistent observer started.');
+    }
+
+    removeCard() {
+        const existing = document.getElementById('jra-local-card');
+        if (existing) existing.remove();
     }
 
     /* 
@@ -125,6 +147,44 @@ class LocalWaterlooOverlay {
                 if (anyUrl) this.data.apply_url = anyUrl[0];
             }
         }
+
+        // 6. Tech Stack (Simple Keyword Matching)
+        this.data.skills = [];
+        const skillsSection = getBetween("Required Skills:", ["Eligible applicants must:", "Compensation and Benefits"], 2000)
+            || getBetween("Qualifications:", ["Eligible applicants must:", "Compensation and Benefits"], 2000);
+
+        if (skillsSection) {
+            const keywords = [
+                // Languages
+                "Python", "Java", "C++", "C#", "JavaScript", "TypeScript", "HTML", "CSS", "SQL", "Go", "Rust", "Swift", "Kotlin", "PHP", "Ruby", "Matlab", "R", "Scala", "Dart", "Lua", "Perl",
+                // Frameworks
+                "React", "Angular", "Vue", "Next.js", "Svelte", "Tailwind", "Bootstrap", "jQuery", "Ember", "Redux", "Django", "Flask", "FastAPI", "Spring", "ASP.NET", ".NET", "Rails", "Laravel", "GraphQL",
+                // Data / ML
+                "Pandas", "NumPy", "PyTorch", "TensorFlow", "Keras", "Scikit-learn", "Hadoop", "Spark", "Kafka", "Airflow", "Tableau", "Power BI", "Snowflake", "Databricks",
+                // Cloud / DevOps
+                "AWS", "Azure", "GCP", "Docker", "Kubernetes", "Terraform", "Jenkins", "Git", "GitHub", "GitLab", "CI/CD", "Linux", "Unix", "Bash", "Ansible",
+                // Tools / Other
+                "Jira", "Confluence", "Excel", "Office", "Figma", "Android", "iOS", "Unity", "Unreal", "Agile", "Scrum", "REST", "API"
+            ];
+
+            const lowerSection = skillsSection.toLowerCase();
+            this.data.skills = keywords.filter(k => {
+                // Escape special regex chars like +, #, .
+                const escaped = k.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`\\b${escaped.toLowerCase()}\\b`, 'i');
+
+                // Special handling for keywords that regex word boundaries fail on or are common substrings
+                // C++
+                if (k === 'C++') return lowerSection.includes('c++');
+                // C#
+                if (k === 'C#') return lowerSection.includes('c#');
+                // .NET
+                if (k === '.NET') return lowerSection.includes('.net');
+                // Node (avoid matching simple text 'node', prefer Node.js or distinct usage if possible, but strict \b is okay for now)
+
+                return regex.test(lowerSection);
+            });
+        }
     }
 
     injectCard() {
@@ -132,6 +192,17 @@ class LocalWaterlooOverlay {
 
         const card = document.createElement('div');
         card.id = 'jra-local-card';
+
+        // Generate Skills HTML
+        const skillsHtml = (this.data.skills && this.data.skills.length > 0)
+            ? `<div class="jra-fact-row">
+                 <span class="jra-fact-label">Tech Stack</span>
+                 <div class="jra-tags-row">
+                    ${this.data.skills.map(s => `<span class="jra-tag">${s}</span>`).join('')}
+                 </div>
+               </div>`
+            : '';
+
         card.innerHTML = `
             <div class="jra-card-header" id="jra-local-header">
                 <span class="jra-card-title-text" title="${this.data.title}">${this.data.title || 'Job Detected'}</span>
@@ -150,6 +221,7 @@ class LocalWaterlooOverlay {
                     <span class="jra-fact-label">Salary</span>
                     <span class="jra-fact-value" style="color:#16a34a">${this.data.salary || 'N/A'}</span>
                 </div>
+                ${skillsHtml}
                 ${this.data.apply_url ? `<a href="${this.data.apply_url}" target="_blank" class="jra-apply-btn">Apply Now ↗</a>` : ''}
             </div>
         `;
