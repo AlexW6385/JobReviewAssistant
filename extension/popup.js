@@ -19,6 +19,88 @@ function showError(message) {
 }
 
 /**
+ * Settings Management
+ */
+function toggleSettings(show) {
+    const panel = document.getElementById('settingsPanel');
+    if (show) {
+        panel.classList.remove('hidden');
+        loadSettings();
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+
+async function loadSettings() {
+    const data = await chrome.storage.local.get(['openai_api_key', 'api_base_url', 'api_model']);
+
+    if (data.openai_api_key) {
+        document.getElementById('apiKey').value = data.openai_api_key;
+    }
+    if (data.api_base_url) {
+        document.getElementById('apiBaseUrl').value = data.api_base_url;
+    } else {
+        document.getElementById('apiBaseUrl').value = 'https://api.openai.com/v1'; // Default
+    }
+    if (data.api_model) {
+        document.getElementById('apiModel').value = data.api_model;
+    } else {
+        document.getElementById('apiModel').value = 'gpt-4o-mini'; // Default
+    }
+}
+
+async function saveSettings() {
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim() || 'https://api.openai.com/v1';
+    const apiModel = document.getElementById('apiModel').value.trim() || 'gpt-4o-mini';
+
+    if (!apiKey) {
+        showError('Please enter an API key'); // Using existing showError for now
+        return;
+    }
+
+    await chrome.storage.local.set({
+        openai_api_key: apiKey,
+        api_base_url: apiBaseUrl,
+        api_model: apiModel
+    });
+
+    // Visual feedback
+    const btn = document.getElementById('saveSettingsBtn');
+    const originalText = btn.textContent;
+    btn.textContent = 'Saved!';
+    setTimeout(() => {
+        btn.textContent = originalText;
+        toggleSettings(false);
+    }, 750);
+
+    // Notify active tabs to update state if needed
+    // const tabs = await chrome.tabs.query({active: true, currentWindow: true});
+    // for (const tab of tabs) {
+    //     chrome.tabs.sendMessage(tab.id, {action: 'settingsUpdated'});
+    // }
+}
+
+function clearSettings() {
+    document.getElementById('apiKey').value = '';
+    document.getElementById('apiBaseUrl').value = 'https://api.openai.com/v1'; // Reset to default
+    document.getElementById('apiModel').value = 'gpt-4o-mini'; // Reset to default
+    chrome.storage.local.remove(['openai_api_key', 'api_base_url', 'api_model'], () => {
+        const btn = document.getElementById('clearSettingsBtn');
+        btn.textContent = 'Cleared';
+        setTimeout(() => btn.textContent = 'Clear', 750);
+    });
+}
+
+async function getApiKey() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['openai_api_key'], (result) => {
+            resolve(result.openai_api_key || null);
+        });
+    });
+}
+
+/**
  * Render tech stack tags
  */
 function renderTechStack(techStack) {
@@ -209,6 +291,15 @@ async function handleAnalyze() {
         // Extract job data
         const jobData = await extractJobData();
 
+        // Add API Key for Dual Mode
+        const apiKey = await getApiKey();
+        if (apiKey) {
+            jobData.api_key = apiKey;
+            console.log('[Popup] Using LLM Mode (API Key present)');
+        } else {
+            console.log('[Popup] Using Code Mode (No API Key)');
+        }
+
         // Update status
         const statusDiv = document.getElementById('extractionStatus');
         const statusText = document.getElementById('statusText');
@@ -234,4 +325,10 @@ async function handleAnalyze() {
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('analyzeBtn').addEventListener('click', handleAnalyze);
     document.getElementById('retryBtn').addEventListener('click', handleAnalyze);
+
+    // Settings listeners
+    document.getElementById('settingsBtn').addEventListener('click', () => toggleSettings(true));
+    document.getElementById('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
+    document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+    document.getElementById('clearSettingsBtn').addEventListener('click', clearSettings);
 });

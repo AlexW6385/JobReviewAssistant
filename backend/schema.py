@@ -43,3 +43,6 @@ class JobInput(BaseModel):
     title: str = Field(..., description="Job title from page")
     company: str = Field(default="", description="Company name")
     raw_text: str = Field(..., description="Raw text content of the job posting")
+    api_key: Optional[str] = Field(default=None, description="API Key for LLM")
+    llm_provider: str = Field(default="openai", description="LLM Provider")
+    model: str = Field(default="gpt-4o-mini", description="Model name to use")

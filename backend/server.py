@@ -39,8 +39,14 @@ async def analyze(job_input: JobInput) -> AnalysisResult:
     print(f"[{timestamp}] New analysis request")
     print(f"  URL: {job_input.url}")
     print(f"  Title: {job_input.title}")
+    
+    # Determine Mode for logging
+    has_key = bool(job_input.api_key and len(job_input.api_key) > 5)
+    mode = "LLM (Enhanced)" if has_key else "Code (Fast/Local)"
+    print(f"  Mode: {mode}")
     print(f"  Raw text: {len(job_input.raw_text)} chars")
     
+
     try:
         # Perform analysis
         result = await analyze_job_posting(job_input)
@@ -48,10 +54,13 @@ async def analyze(job_input: JobInput) -> AnalysisResult:
         # Log everything to one JSON file
         log_data = {
             "timestamp": timestamp,
+            "mode": mode,
             "input": {
                 "url": job_input.url,
                 "title": job_input.title,
                 "company": job_input.company,
+                "api_key_masked": f"{job_input.api_key[:3]}...{job_input.api_key[-4:]}" if has_key else None,
+                "model": job_input.model if has_key else None,
                 "raw_text_length": len(job_input.raw_text),
                 "raw_text_preview": job_input.raw_text[:1500]
             },
@@ -67,7 +76,10 @@ async def analyze(job_input: JobInput) -> AnalysisResult:
             }
         }
         
-        log_file = debug_dir / f"analysis_{timestamp}.json"
+        # Log Separation: LLM vs Code
+        prefix = "llm" if has_key else "code"
+        log_file = debug_dir / f"{prefix}_{timestamp}.json"
+        
         with open(log_file, "w", encoding="utf-8") as f:
             json.dump(log_data, f, indent=2, ensure_ascii=False)
         
