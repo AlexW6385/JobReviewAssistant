@@ -3,10 +3,6 @@
 // ==========================================
 // PART 1: LOCAL AUTO-PARSER (WaterlooWorks Only)
 // ==========================================
-
-// ==========================================
-// PART 1: LOCAL AUTO-PARSER (WaterlooWorks Only)
-// ==========================================
 class LocalWaterlooOverlay {
     constructor() {
         this.data = null;
@@ -24,7 +20,6 @@ class LocalWaterlooOverlay {
             const bodyText = document.body.innerText;
             // Check if JD is present
             if (!bodyText.includes("JOB POSTING INFORMATION") && !bodyText.includes("Job Posting Information")) {
-                // If we had a card but lost the JD (e.g. navigated away), ensure card is gone
                 if (this.lastContentHash) {
                     this.removeCard();
                     this.lastContentHash = "";
@@ -32,7 +27,7 @@ class LocalWaterlooOverlay {
                 return;
             }
 
-            // Simple "hash" to detect content change (length + first 200 chars + title check)
+            // Simple "hash" to detect content change
             const titleSnippet = bodyText.match(/Job Title:\s*([^\n]+)/)?.[1] || "";
             const currentHash = bodyText.length + "-" + titleSnippet;
 
@@ -49,7 +44,7 @@ class LocalWaterlooOverlay {
         // 1. Try immediately
         attemptParse();
 
-        // 2. Persistent Observer (No timeout)
+        // 2. Persistent Observer
         let timeout;
         const observer = new MutationObserver((mutations) => {
             clearTimeout(timeout);
@@ -65,23 +60,18 @@ class LocalWaterlooOverlay {
         if (existing) existing.remove();
     }
 
-    /* 
-       Parsing Logic Update:
-       Uses strict section detection based on user examples.
-       1. Split text into main chunks if possible, or use indexOf logic.
-       2. Extract specific fields from "Location", "Compensation", and "Application" areas.
-    */
     parse(text) {
         this.data = {
             title: null,
             location: null,
             duration: null,
             salary: null,
-            apply_url: null
+            apply_url: null,
+            skills: []
         };
 
         // Helper: safe extraction
-        const getBetween = (start, stops, limit = 500) => {
+        const getBetween = (start, stops, limit = 5000) => {
             const sIdx = text.indexOf(start);
             if (sIdx === -1) return null;
             const contentStart = sIdx + start.length;
@@ -96,94 +86,200 @@ class LocalWaterlooOverlay {
         // 1. Title
         this.data.title = getBetween("Job Title:", ["Note:", "Job Openings:", "Level:"], 100);
 
-        // 2. Location (Complex Assembly)
-        // Combine City + Province/State + Country + Arrangement
-        // Logic: Scan for "Job - City:", "Job - Province/State:", "Employment Location Arrangement:"
-        const city = getBetween("Job - City:", ["Job - Province", "Job - Postal", "Job - Country"], 50);
-        const province = getBetween("Job - Province/State:", ["Job - Postal", "Job - Country"], 50);
-        const arrangement = getBetween("Employment Location Arrangement:", ["Work Term Duration:", "Special Work"], 50);
+        // 2. Location (Simplified)
+        // User Request: Use info under "Job Location" (mostly City) + Arrangement in parens.
+        // We look for "Job - City:" or fallback to "Job Location:" if that exists in other formats.
+        // Current WW format usually has "Job - City:" and "Job - Province/State:"
 
-        let locParts = [];
-        if (city) locParts.push(city);
-        if (province) locParts.push(province);
-        if (arrangement) locParts.push(`(${arrangement})`);
+        let primaryLoc = getBetween("Job - City:", ["Job - Province", "Job - Postal", "Job - Country"], 50);
+        if (!primaryLoc) {
+            // Fallback if they use "Job Location:" header instead
+            primaryLoc = getBetween("Job Location:", ["Job -", "Region"], 100);
+        }
 
-        this.data.location = locParts.length > 0 ? locParts.join(", ") : "Unknown Location";
+        const arrangementRaw = getBetween("Employment Location Arrangement:", ["Work Term Duration:", "Special Work"], 100);
+        let arrangement = null;
+        if (arrangementRaw) {
+            const lower = arrangementRaw.toLowerCase();
+            if (lower.includes('hybrid')) arrangement = 'Hybrid';
+            else if (lower.includes('remote') || lower.includes('virtual')) arrangement = 'Remote';
+            else if (lower.includes('in-person') || lower.includes('site')) arrangement = 'In-person';
+        }
 
-        // 3. Duration
-        this.data.duration = getBetween("Work Term Duration:", ["Special Work Term", "Job Summary"], 100);
+        if (primaryLoc) {
+            this.data.location = primaryLoc + (arrangement ? ` (${arrangement})` : "");
+        } else {
+            this.data.location = arrangement ? arrangement : "Unknown Location";
+        }
 
-        // 4. Salary
-        // Look specifically in "Compensation and Benefits" -> "Wage Rate per Hour" OR generic "$" regex
-        // Contextual search is safer
-        const compSection = getBetween("Compensation and Benefits:", ["Targeted Degrees"], 1000);
-        if (compSection) {
-            const wageMatch = compSection.match(/\$[\d,.]+(?:\s?per hour|\s?\/hr)?/i);
-            if (wageMatch) {
-                this.data.salary = wageMatch[0] + (wageMatch[0].includes("per") ? "" : "/hr");
+        // 3. Duration (Strict)
+        const rawDuration = getBetween("Work Term Duration:", ["Special Work Term", "Job Summary"], 200);
+        if (rawDuration) {
+            const durMatch = rawDuration.match(/(\d+\s*(?:month|week)s?(?:\s*work\s*term)?)/i);
+            if (durMatch) {
+                this.data.duration = durMatch[1];
+                if (rawDuration.toLowerCase().includes("prefer")) {
+                    this.data.duration += " (Preferred)";
+                }
             } else {
-                // Try range in section
-                const rangeMatch = compSection.match(/\$[\d,.]+\s*-\s*\$[\d,.]+/);
-                if (rangeMatch) this.data.salary = rangeMatch[0];
+                this.data.duration = rawDuration.split('\n')[0].substring(0, 30);
             }
         }
-        // Fallback global salary
+
+        // 4. Salary (Smart Heuristics)
+        const compSection = getBetween("Compensation and Benefits:", ["Targeted Degrees"], 1000) || "";
+        let salaryFound = null;
+
+        // 1. Explicit Hourly
+        const hourlyRegex = /(?:\$|USD|CAD)?\s*(\d{1,3}(?:[,]\d{3})*(?:\.\d{2})?)\s*(?:USD|CAD)?\s*(?:per hour|\/hr)/i;
+        const hourlyMatch = compSection.match(hourlyRegex);
+        if (hourlyMatch) {
+            salaryFound = `$${hourlyMatch[1]}/hr`;
+        } else {
+            // 2. Inference
+            const moneyMatches = compSection.matchAll(/(?:\$|USD|CAD)?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:USD|CAD)?/gi);
+            for (const m of moneyMatches) {
+                const rawVal = m[1].replace(/,/g, '');
+                const val = parseFloat(rawVal);
+                if (isNaN(val)) continue;
+                if (val < 15) continue;
+                if (val > 1900 && val < 2100) continue;
+
+                let interval = "?";
+                if (val < 150) interval = "/hr";
+                else if (val > 20000) interval = "/yr";
+                else if (val > 2000 && val < 10000) interval = "/mo";
+
+                salaryFound = `$${m[1]}${interval}`;
+                break;
+            }
+        }
+        this.data.salary = salaryFound || null;
+
+        // Fallback global salary if no salary found in section
         if (!this.data.salary) {
             const globalMatch = text.match(/\$[\d,.]+\s*-?\s*\$[\d,.]+/);
             if (globalMatch) this.data.salary = globalMatch[0];
         }
 
-        // 5. Apply URL
-        // Look in "Application Information" -> "If By Website, Go To:"
-        const appSection = getBetween("Application Information", ["Company Information", "Organization:"], 2000);
-        if (appSection) {
-            // Try specific labeled URL first
-            const labelMatch = appSection.match(/If By Website, Go To:\s*(https?:\/\/[^\s]+)/);
-            if (labelMatch) {
-                this.data.apply_url = labelMatch[1];
-            } else {
-                // Generic URL search in app section
-                const anyUrl = appSection.match(/https?:\/\/[^\s<>"\']+/);
-                if (anyUrl) this.data.apply_url = anyUrl[0];
+        // 5. Apply URL (DOM-based Reliability)
+        // Regex on innerText can be truncated by line wraps. We try to find the actual <a> tag or text node in DOM.
+        this.data.apply_url = null;
+        try {
+            // Strategy A: Find the label in DOM, then find a link near it.
+            // XPath: look for text node containing the label
+            const iterator = document.evaluate(
+                "//*[contains(text(), 'If By Website, Go To:')]",
+                document, null, XPathResult.ANY_TYPE, null
+            );
+
+            let node = iterator.iterateNext();
+            if (node) {
+                // Look for an <a> tag inside this node or its siblings
+                const container = node.parentElement ? node.parentElement.parentElement : document.body;
+                // Search specifically near this area (limit scope to avoid bad matches)
+                // We pick the first http link that appears *after* the label in the HTML source order if possible, 
+                // or just the closest one.
+
+                // Simple attempt: Check if the node itself has an <a> child?
+                let link = node.querySelector('a');
+
+                // If not, check next sibling
+                if (!link && node.nextElementSibling) {
+                    link = node.nextElementSibling.querySelector('a') || (node.nextElementSibling.tagName === 'A' ? node.nextElementSibling : null);
+                }
+
+                // If found, use href
+                if (link && link.href && link.href.startsWith('http')) {
+                    this.data.apply_url = link.href;
+                }
             }
+
+            // Strategy B (Fallback): Regex on full Text but looking for the "If By Website" block specifically
+            if (!this.data.apply_url) {
+                const appSection = getBetween("Application Information", ["Company Information", "Organization:"], 5000);
+                if (appSection) {
+                    // Match http://... until end of line or whitespace
+                    // We permit non-whitespace characters including query params
+                    const match = appSection.match(/If By Website, Go To:[\s\r\n]*\s*(https?:\/\/[^\s"'<>]+)/i);
+                    if (match) {
+                        this.data.apply_url = match[1];
+                    } else {
+                        // Last ditch: any URL in that section
+                        const any = appSection.match(/(https?:\/\/[^\s"'<>]+)/);
+                        if (any) this.data.apply_url = any[1];
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("URL Parse error", e);
         }
 
-        // 6. Tech Stack (Simple Keyword Matching)
+        // 6. Tech Stack (Massive Expansion)
         this.data.skills = [];
-        const skillsSection = getBetween("Required Skills:", ["Eligible applicants must:", "Compensation and Benefits"], 2000)
-            || getBetween("Qualifications:", ["Eligible applicants must:", "Compensation and Benefits"], 2000);
+        const skillsSection = getBetween("Required Skills:", ["Eligible applicants must:", "Compensation and Benefits"], 5000)
+            || getBetween("Qualifications:", ["Eligible applicants must:", "Compensation and Benefits"], 5000);
 
         if (skillsSection) {
             const keywords = [
-                // Languages
-                "Python", "Java", "C++", "C#", "JavaScript", "TypeScript", "HTML", "CSS", "SQL", "Go", "Rust", "Swift", "Kotlin", "PHP", "Ruby", "Matlab", "R", "Scala", "Dart", "Lua", "Perl",
-                // Frameworks
-                "React", "Angular", "Vue", "Next.js", "Svelte", "Tailwind", "Bootstrap", "jQuery", "Ember", "Redux", "Django", "Flask", "FastAPI", "Spring", "ASP.NET", ".NET", "Rails", "Laravel", "GraphQL",
-                // Data / ML
-                "Pandas", "NumPy", "PyTorch", "TensorFlow", "Keras", "Scikit-learn", "Hadoop", "Spark", "Kafka", "Airflow", "Tableau", "Power BI", "Snowflake", "Databricks",
-                // Cloud / DevOps
-                "AWS", "Azure", "GCP", "Docker", "Kubernetes", "Terraform", "Jenkins", "Git", "GitHub", "GitLab", "CI/CD", "Linux", "Unix", "Bash", "Ansible",
-                // Tools / Other
-                "Jira", "Confluence", "Excel", "Office", "Figma", "Android", "iOS", "Unity", "Unreal", "Agile", "Scrum", "REST", "API"
+                // === Languages ===
+                "Python", "Java", "C++", "C", "C#", "JavaScript", "JS", "TypeScript", "TS", "HTML", "CSS", "SQL", "NoSQL",
+                "Go", "Golang", "Rust", "Swift", "Kotlin", "PHP", "Ruby", "Matlab", "R", "Scala", "Dart", "Lua", "Perl",
+                "Haskell", "Elixir", "Erlang", "Clojure", "F#", "Groovy", "Julia", "Assembly", "Bash", "Shell", "PowerShell",
+                "VBA", "Objective-C", "Solidity",
+
+                // === Frameworks (Web/Mobile/Desktop) ===
+                "React", "React.js", "React Native", "Angular", "Vue", "Vue.js", "Next.js", "Nuxt.js", "Svelte",
+                "Node", "Node.js", "Express", "NestJS", "Django", "Flask", "FastAPI", "Spring", "Spring Boot",
+                "ASP.NET", ".NET", ".NET Core", "Entity Framework", "Rails", "Ruby on Rails", "Laravel", "Symfony",
+                "CodeIgniter", "GraphQL", "Apollo", "Tailwind", "Bootstrap", "Material UI", "Chakra UI", "Sass", "Less",
+                "jQuery", "Ember", "Backbone", "Redux", "MobX", "Flutter", "Ionic", "Xamarin", "Cordova", "Electron", "Swing", "JavaFX", "WPF", "Qt",
+
+                // === Databases ===
+                "PostgreSQL", "Postgres", "MySQL", "MariaDB", "SQLite", "Oracle", "SQL Server", "MSSQL",
+                "MongoDB", "Mongo", "Cassandra", "Redis", "Elasticsearch", "DynamoDB", "Firestore", "Firebase",
+                "CouchDB", "Neo4j", "Realm", "Supabase",
+
+                // === Cloud & DevOps ===
+                "AWS", "Amazon Web Services", "Azure", "GCP", "Google Cloud", "Heroku", "Vercel", "Netlify", "DigitalOcean",
+                "Docker", "Kubernetes", "K8s", "Terraform", "Ansible", "Puppet", "Chef", "Vagrant",
+                "Jenkins", "GitLab CI", "CircleCI", "Travis CI", "GitHub Actions", "TeamCity", "Bamboo",
+                "Git", "GitHub", "GitLab", "Bitbucket", "SVN", "Mercurial",
+                "Nginx", "Apache", "Kafka", "RabbitMQ", "ActiveMQ", "SQS", "SNS",
+
+                // === AI / Data ===
+                "Pandas", "NumPy", "SciPy", "Matplotlib", "Seaborn", "Scikit-learn", "Sklearn",
+                "PyTorch", "TensorFlow", "Keras", "Opencv", "NLP", "LLM", "GPT", "Bert", "Hugging Face",
+                "Spark", "Hadoop", "Databricks", "Snowflake", "BigQuery", "Redshift", "Tableau", "Power BI", "Looker",
+                "Airflow", "dbt", "Excel",
+
+                // === Tools & Testing ===
+                "Jira", "Confluence", "Trello", "Asana", "Notion", "Slack", "Teams", "Zoom",
+                "Figma", "Sketch", "Adobe XD", "Photoshop", "Illustrator",
+                "Selenium", "Cypress", "Playwright", "Jest", "Mocha", "Chai", "Junit", "TestNG", "Pytest", "RSpec",
+                "Postman", "Insomnia", "Swagger", "OpenAPI",
+                "Linux", "Unix", "Ubuntu", "CentOS", "RedHat", "Windows", "MacOS", "Android", "iOS", "Unity", "Unreal Engine"
             ];
 
             const lowerSection = skillsSection.toLowerCase();
             this.data.skills = keywords.filter(k => {
                 // Escape special regex chars like +, #, .
                 const escaped = k.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-                const regex = new RegExp(`\\b${escaped.toLowerCase()}\\b`, 'i');
 
-                // Special handling for keywords that regex word boundaries fail on or are common substrings
-                // C++
+                // Special handling for keywords
                 if (k === 'C++') return lowerSection.includes('c++');
-                // C#
                 if (k === 'C#') return lowerSection.includes('c#');
-                // .NET
                 if (k === '.NET') return lowerSection.includes('.net');
-                // Node (avoid matching simple text 'node', prefer Node.js or distinct usage if possible, but strict \b is okay for now)
+                if (k === 'Go') return lowerSection.match(/\bgo\b/); // Strict 'go'
+                if (k === 'C') return lowerSection.match(/\bc\b/) && !lowerSection.includes('c++') && !lowerSection.includes('c#'); // Strict 'C'
 
+                // General strict word boundary match
+                const regex = new RegExp(`\\b${escaped.toLowerCase()}\\b`, 'i');
                 return regex.test(lowerSection);
             });
+
+            // Deduplicate (e.g. "React" and "React.js" -> keep simplified if possible, or just unique)
+            this.data.skills = [...new Set(this.data.skills)];
         }
     }
 
