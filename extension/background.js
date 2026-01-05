@@ -10,6 +10,12 @@ async function analyzeWithLLM(data) {
   const apiKey = settings.jra_api_key;
   const provider = settings.api_provider || 'openai';
 
+  console.log('[JRA-Background] ========== ANALYSIS REQUEST ==========');
+  console.log('[JRA-Background] Provider:', provider);
+  console.log('[JRA-Background] Model:', settings.api_model || 'default');
+  console.log('[JRA-Background] Input text length:', data.text?.length || 0);
+  console.log('[JRA-Background] Input preview:', data.text?.substring(0, 500));
+
   if (!apiKey) {
     throw new Error("API Key is missing. Please set it in the extension popup.");
   }
@@ -49,7 +55,11 @@ Example structure:
 }
 Do not output markdown code blocks, just the raw JSON string.`;
 
-  const userPrompt = `Analyze the following job description:\n\n${data.text.substring(0, 15000)}`;
+  // Use more of the input text to ensure we capture salary info
+  const inputText = data.text.substring(0, 20000);
+  const userPrompt = `Analyze the following job description:\n\n${inputText}`;
+  
+  console.log('[JRA-Background] User prompt length:', userPrompt.length);
 
   let url, method, headers, body;
   let model = settings.api_model;
@@ -141,11 +151,18 @@ Do not output markdown code blocks, just the raw JSON string.`;
     }
 
     // 6. Clean and Parse JSON
+    console.log('[JRA-Background] Raw LLM response:', content);
+    
     const cleanContent = content.replace(/```json\n?|\n?```/g, '').trim();
-    return JSON.parse(cleanContent);
+    const parsed = JSON.parse(cleanContent);
+    
+    console.log('[JRA-Background] Parsed response:', parsed);
+    console.log('[JRA-Background] ========== ANALYSIS COMPLETE ==========');
+    
+    return parsed;
 
   } catch (e) {
-    console.error("LLM Analysis Failed:", e);
+    console.error("[JRA-Background] LLM Analysis Failed:", e);
     throw e;
   }
 }

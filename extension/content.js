@@ -7,10 +7,18 @@
 class LocalWaterlooOverlay {
     constructor() {
         this.data = null;
-        this.lastContentHash = "";
-        this.isUserClosed = false; // Track if user manually closed the card
-        this.closedForHash = "";   // Track which JD was closed
+        this.currentJobId = null;    // Unique identifier for current JD
+        this.dismissedJobId = null;  // Which JD user dismissed
         this.checkAndRun();
+    }
+
+    // Generate a unique ID for a JD based on key content
+    generateJobId(text) {
+        const title = text.match(/Job Title:\s*([^\n]+)/)?.[1]?.trim() || "";
+        const company = text.match(/Organization:\s*([^\n]+)/)?.[1]?.trim() || "";
+        const jobId = text.match(/Job ID:\s*(\d+)/)?.[1] || "";
+        // Create a unique identifier
+        return `${jobId}-${title}-${company}`.toLowerCase().replace(/\s+/g, '-');
     }
 
     checkAndRun() {
@@ -20,56 +28,60 @@ class LocalWaterlooOverlay {
 
         const attemptParse = () => {
             const bodyText = document.body.innerText;
-            // Basic JD check
-            if (!bodyText.includes("JOB POSTING INFORMATION") && !bodyText.includes("Job Posting Information")) {
-                // Not a JD page, reset everything
-                if (this.lastContentHash) {
-                    this.removeCard();
-                    this.lastContentHash = "";
-                    this.isUserClosed = false;
-                    this.closedForHash = "";
-                }
+            
+            // Check if this is a JD page
+            const isJDPage = bodyText.includes("JOB POSTING INFORMATION") || 
+                            bodyText.includes("Job Posting Information") ||
+                            bodyText.includes("Job Title:");
+            
+            if (!isJDPage) {
+                // Not a JD page - clean up and reset
+                this.removeCard();
+                this.currentJobId = null;
+                this.dismissedJobId = null; // Reset dismissed state when leaving JD pages
                 return;
             }
 
-            const titleSnippet = bodyText.match(/Job Title:\s*([^\n]+)/)?.[1] || "";
-            const currentHash = bodyText.length + "-" + titleSnippet;
-
-            // If content hasn't changed, do nothing
-            if (currentHash === this.lastContentHash) return;
-
-            // Content changed - this is a NEW JD
-            console.log('[JRA-Local] New JD Content detected. Parsing...', titleSnippet);
+            const newJobId = this.generateJobId(bodyText);
             
-            // If this is a different JD than what was closed, reset user closed state
-            if (this.closedForHash !== currentHash) {
-                this.isUserClosed = false;
-                this.closedForHash = "";
+            // Same job, no change needed
+            if (newJobId === this.currentJobId) {
+                return;
             }
             
-            this.lastContentHash = currentHash;
+            // NEW JOB DETECTED
+            console.log('[JRA-Local] New JD detected:', newJobId);
+            
+            // Clean up old card
             this.removeCard();
-
-            // Only show card if user hasn't closed it for THIS JD
-            if (this.isUserClosed) {
-                console.log('[JRA-Local] User closed this card, not re-showing.');
+            this.currentJobId = newJobId;
+            
+            // Check if user dismissed THIS specific job
+            if (newJobId === this.dismissedJobId) {
+                console.log('[JRA-Local] User dismissed this job, not showing card');
                 return;
             }
+            
+            // This is a different job, clear dismissed state
+            this.dismissedJobId = null;
 
-            // Delegate to Parser
+            // Parse and show card
             if (typeof WaterlooParser !== 'undefined') {
                 this.data = WaterlooParser.parse(bodyText);
                 this.injectCard();
             } else {
-                console.error("WaterlooParser not found. Check manifest.");
+                console.error("WaterlooParser not found.");
             }
         };
 
+        // Initial parse
         attemptParse();
+        
+        // Watch for content changes with debounce
         let timeout;
         const observer = new MutationObserver(() => {
             clearTimeout(timeout);
-            timeout = setTimeout(attemptParse, 500);
+            timeout = setTimeout(attemptParse, 300);
         });
         observer.observe(document.body, { childList: true, subtree: true });
     }
@@ -121,10 +133,10 @@ class LocalWaterlooOverlay {
         document.body.appendChild(card);
         this.makeDraggable(card);
 
-        // Close logic - mark as user closed for THIS specific JD
+        // Close logic - remember which job was dismissed
         document.getElementById('jra-local-close').addEventListener('click', () => {
-            this.isUserClosed = true;
-            this.closedForHash = this.lastContentHash; // Remember which JD was closed
+            this.dismissedJobId = this.currentJobId;
+            console.log('[JRA-Local] User dismissed job:', this.dismissedJobId);
             card.remove();
         });
     }
@@ -176,7 +188,8 @@ class AIWidget {
         this.provider = 'openai';
         this.baseUrl = 'https://api.openai.com/v1';
         this.model = 'gpt-4o-mini';
-        this.lastAnalyzedUrl = null; // Track which page was analyzed
+        this.lastAnalyzedUrl = null;  // Track which URL was analyzed
+        this.hasAnalysis = false;      // Track if we have analysis results
         this.init();
     }
 
@@ -188,26 +201,31 @@ class AIWidget {
         this.model = settings.api_model || this.model;
         this.injectUI();
         this.setupListeners();
-        this.setupNavigationWatcher();
+        this.setupURLWatcher();
     }
 
-    // Watch for URL changes (SPA navigation)
-    setupNavigationWatcher() {
+    // Watch ONLY for URL changes (not content changes)
+    setupURLWatcher() {
         let lastUrl = window.location.href;
         
-        // Check URL periodically for SPA navigation
-        setInterval(() => {
-            if (window.location.href !== lastUrl) {
-                console.log('[JRA-AI] URL changed, resetting AI card state');
-                lastUrl = window.location.href;
+        const checkForURLChange = () => {
+            const currentUrl = window.location.href;
+            
+            // Only reset on URL change
+            if (currentUrl !== lastUrl) {
+                console.log('[JRA-AI] URL changed from', lastUrl, 'to', currentUrl);
+                lastUrl = currentUrl;
                 this.resetCardState();
             }
-        }, 500);
+        };
+        
+        // Check periodically for SPA navigation
+        setInterval(checkForURLChange, 500);
 
         // Also listen to popstate for browser back/forward
         window.addEventListener('popstate', () => {
-            console.log('[JRA-AI] Popstate detected, resetting AI card state');
-            this.resetCardState();
+            console.log('[JRA-AI] Popstate detected, resetting AI card');
+            setTimeout(() => this.resetCardState(), 100);
         });
     }
 
@@ -217,16 +235,25 @@ class AIWidget {
         const resultArea = document.getElementById('jra-ai-result-area');
         const analyzeBtn = document.getElementById('jra-btn-analyze');
         
+        console.log('[JRA-AI] Resetting card state');
+        
+        // Hide card but keep it ready
         if (card) {
-            card.classList.remove('visible'); // Hide card
+            card.classList.remove('visible');
         }
+        
+        // Clear previous results
         if (resultArea) {
-            resultArea.innerHTML = ''; // Clear previous results
+            resultArea.innerHTML = '';
         }
+        
+        // Reset button
         if (analyzeBtn) {
-            analyzeBtn.innerText = '✨ Generate Analysis'; // Reset button text
+            analyzeBtn.innerText = '✨ Generate Analysis';
         }
+        
         this.lastAnalyzedUrl = null;
+        this.hasAnalysis = false;
         this.toggleView('action');
     }
 
@@ -334,7 +361,7 @@ class AIWidget {
         }
 
         document.getElementById('jra-ai-fab').addEventListener('click', () => {
-            // Toggling class 'visible' which sets display: block !important
+            // Show/hide the card - results are preserved
             card.classList.toggle('visible');
         });
 
@@ -388,21 +415,64 @@ class AIWidget {
         if (viewName === 'loading') loadingView.classList.remove('hidden');
     }
 
+    // Extract the best JD content from page
+    extractJDContent() {
+        const bodyText = document.body.innerText;
+        
+        // For WaterlooWorks, try to get the main JD section
+        let jdContent = bodyText;
+        
+        // Try to find JD-specific sections
+        const jdStart = bodyText.indexOf('JOB POSTING INFORMATION');
+        if (jdStart !== -1) {
+            jdContent = bodyText.substring(jdStart);
+        } else {
+            // Try alternative marker
+            const altStart = bodyText.indexOf('Job Title:');
+            if (altStart !== -1) {
+                jdContent = bodyText.substring(Math.max(0, altStart - 200));
+            }
+        }
+        
+        // Limit to reasonable size but ensure we get enough
+        return jdContent.substring(0, 25000);
+    }
+
     async runAnalysis() {
         this.toggleView('loading');
 
         try {
-            const text = document.body.innerText.substring(0, 20000);
+            const text = this.extractJDContent();
+            const currentUrl = window.location.href;
+            
+            // Log the input being sent to LLM for debugging
+            console.log('[JRA-AI] ========== LLM INPUT START ==========');
+            console.log('[JRA-AI] Current URL:', currentUrl);
+            console.log('[JRA-AI] Input length:', text.length, 'characters');
+            console.log('[JRA-AI] First 2000 chars:', text.substring(0, 2000));
+            console.log('[JRA-AI] ========== LLM INPUT END ==========');
+            
             const response = await chrome.runtime.sendMessage({
                 action: "analyzeWithLLM",
                 data: { text }
             });
 
             if (response.success) {
+                console.log('[JRA-AI] LLM Response:', response.data);
+                
+                // Render results
                 this.renderResult(response.data);
                 this.toggleView('action');
-                this.lastAnalyzedUrl = window.location.href; // Track analyzed page
-                document.getElementById('jra-btn-analyze').innerText = "🔄 Regenerate";
+                
+                // Mark that we have analysis for this URL
+                this.lastAnalyzedUrl = currentUrl;
+                this.hasAnalysis = true;
+                
+                // Update button text
+                const analyzeBtn = document.getElementById('jra-btn-analyze');
+                if (analyzeBtn) {
+                    analyzeBtn.innerText = "🔄 Regenerate";
+                }
             } else {
                 alert("Error: " + response.error);
                 this.toggleView('action');
