@@ -19,10 +19,23 @@ async function analyzeWithLLM(data) {
 Your goal is to analyze job descriptions and provide structured insights.
 Output strictly in valid JSON format with the following 3 sections:
 
-1. "basic_info": Extract these fields independently from the text: "title", "location", "salary", "tech_stack" (list).
+1. "basic_info": Extract these fields from the text:
+   - "title": The job title/position name
+   - "location": City, State/Province, Country and work arrangement (Remote/Hybrid/On-site)
+   - "salary": IMPORTANT - Look very carefully for any compensation information. This could appear as:
+     * Hourly rate (e.g. "$25/hr", "$30 per hour", "25 USD/hour")
+     * Monthly salary (e.g. "$5000/month")
+     * Annual salary (e.g. "$80,000/year", "80K-100K")
+     * Salary range (e.g. "$20-$30/hr", "$70K-$90K")
+     * Under sections like "Compensation", "Salary", "Pay", "Rate", "Benefits"
+     * Sometimes written as just numbers near currency symbols
+     If found, format as a clean string like "$XX/hr" or "$XXK/yr". If truly not mentioned anywhere, return "Not specified".
+   - "tech_stack": List of technologies, programming languages, frameworks, tools mentioned
+
 2. "ratings": Provide 0-10 scores for:
    - "difficulty": Application/Interview difficulty (10 = hardest, e.g. Jane Street/Google).
    - "growth": Growth & Learning opportunity (10 = massive growth).
+
 3. "analysis":
    - "summary": A strategic summary of the role (2-3 sentences).
    - "domain": The primary domain (e.g. "ML Engineering", "Full Stack", "Embedded").
@@ -30,9 +43,9 @@ Output strictly in valid JSON format with the following 3 sections:
 
 Example structure:
 {
-  "basic_info": { "title": "...", "location": "...", "salary": "...", "tech_stack": [...] },
-  "ratings": { "difficulty": 8, "growth": 9 },
-  "analysis": { "summary": "...", "domain": "...", "highlights": "..." }
+  "basic_info": { "title": "Software Engineer Intern", "location": "Toronto, ON (Hybrid)", "salary": "$28-$35/hr", "tech_stack": ["Python", "React", "AWS"] },
+  "ratings": { "difficulty": 6, "growth": 8 },
+  "analysis": { "summary": "...", "domain": "Full Stack Development", "highlights": "Great mentorship, modern tech stack" }
 }
 Do not output markdown code blocks, just the raw JSON string.`;
 

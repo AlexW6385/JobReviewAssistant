@@ -302,3 +302,20 @@
     animation: jra-spin 1s linear infinite;
     margin: 20px auto;
 }
+
+@keyframes jra-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* --- 3. AI Card Header Specific (Override local card header) --- */
+#jra-ai-card .jra-card-header {
+    background: #f8fafc;
+    color: #334155;
+    cursor: default;
+}
+
+/* --- 4. Utility Classes --- */
+.hidden {
+    display: none !important;
+}

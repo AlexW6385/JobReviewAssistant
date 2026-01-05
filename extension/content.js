@@ -8,6 +8,8 @@ class LocalWaterlooOverlay {
     constructor() {
         this.data = null;
         this.lastContentHash = "";
+        this.isUserClosed = false; // Track if user manually closed the card
+        this.closedForHash = "";   // Track which JD was closed
         this.checkAndRun();
     }
 
@@ -20,9 +22,12 @@ class LocalWaterlooOverlay {
             const bodyText = document.body.innerText;
             // Basic JD check
             if (!bodyText.includes("JOB POSTING INFORMATION") && !bodyText.includes("Job Posting Information")) {
+                // Not a JD page, reset everything
                 if (this.lastContentHash) {
                     this.removeCard();
                     this.lastContentHash = "";
+                    this.isUserClosed = false;
+                    this.closedForHash = "";
                 }
                 return;
             }
@@ -30,11 +35,26 @@ class LocalWaterlooOverlay {
             const titleSnippet = bodyText.match(/Job Title:\s*([^\n]+)/)?.[1] || "";
             const currentHash = bodyText.length + "-" + titleSnippet;
 
+            // If content hasn't changed, do nothing
             if (currentHash === this.lastContentHash) return;
 
+            // Content changed - this is a NEW JD
             console.log('[JRA-Local] New JD Content detected. Parsing...', titleSnippet);
+            
+            // If this is a different JD than what was closed, reset user closed state
+            if (this.closedForHash !== currentHash) {
+                this.isUserClosed = false;
+                this.closedForHash = "";
+            }
+            
             this.lastContentHash = currentHash;
             this.removeCard();
+
+            // Only show card if user hasn't closed it for THIS JD
+            if (this.isUserClosed) {
+                console.log('[JRA-Local] User closed this card, not re-showing.');
+                return;
+            }
 
             // Delegate to Parser
             if (typeof WaterlooParser !== 'undefined') {
@@ -101,8 +121,10 @@ class LocalWaterlooOverlay {
         document.body.appendChild(card);
         this.makeDraggable(card);
 
-        // Close logic
+        // Close logic - mark as user closed for THIS specific JD
         document.getElementById('jra-local-close').addEventListener('click', () => {
+            this.isUserClosed = true;
+            this.closedForHash = this.lastContentHash; // Remember which JD was closed
             card.remove();
         });
     }
@@ -154,6 +176,7 @@ class AIWidget {
         this.provider = 'openai';
         this.baseUrl = 'https://api.openai.com/v1';
         this.model = 'gpt-4o-mini';
+        this.lastAnalyzedUrl = null; // Track which page was analyzed
         this.init();
     }
 
@@ -165,6 +188,46 @@ class AIWidget {
         this.model = settings.api_model || this.model;
         this.injectUI();
         this.setupListeners();
+        this.setupNavigationWatcher();
+    }
+
+    // Watch for URL changes (SPA navigation)
+    setupNavigationWatcher() {
+        let lastUrl = window.location.href;
+        
+        // Check URL periodically for SPA navigation
+        setInterval(() => {
+            if (window.location.href !== lastUrl) {
+                console.log('[JRA-AI] URL changed, resetting AI card state');
+                lastUrl = window.location.href;
+                this.resetCardState();
+            }
+        }, 500);
+
+        // Also listen to popstate for browser back/forward
+        window.addEventListener('popstate', () => {
+            console.log('[JRA-AI] Popstate detected, resetting AI card state');
+            this.resetCardState();
+        });
+    }
+
+    // Reset card to initial state
+    resetCardState() {
+        const card = document.getElementById('jra-ai-card');
+        const resultArea = document.getElementById('jra-ai-result-area');
+        const analyzeBtn = document.getElementById('jra-btn-analyze');
+        
+        if (card) {
+            card.classList.remove('visible'); // Hide card
+        }
+        if (resultArea) {
+            resultArea.innerHTML = ''; // Clear previous results
+        }
+        if (analyzeBtn) {
+            analyzeBtn.innerText = '✨ Generate Analysis'; // Reset button text
+        }
+        this.lastAnalyzedUrl = null;
+        this.toggleView('action');
     }
 
     injectUI() {
@@ -338,6 +401,7 @@ class AIWidget {
             if (response.success) {
                 this.renderResult(response.data);
                 this.toggleView('action');
+                this.lastAnalyzedUrl = window.location.href; // Track analyzed page
                 document.getElementById('jra-btn-analyze').innerText = "🔄 Regenerate";
             } else {
                 alert("Error: " + response.error);
