@@ -449,7 +449,7 @@ class AIWidget {
             console.log('[JRA-AI] ========== LLM INPUT START ==========');
             console.log('[JRA-AI] Current URL:', currentUrl);
             console.log('[JRA-AI] Input length:', text.length, 'characters');
-            console.log('[JRA-AI] First 2000 chars:', text.substring(0, 2000));
+            console.log('[JRA-AI] First 200000 chars:', text.substring(0, 200000));
             console.log('[JRA-AI] ========== LLM INPUT END ==========');
             
             const response = await chrome.runtime.sendMessage({
