@@ -6,8 +6,8 @@
 
 async function analyzeWithLLM(data) {
   // 1. Get Settings
-  const settings = await chrome.storage.local.get(['openai_api_key', 'api_provider', 'api_base_url', 'api_model']);
-  const apiKey = settings.openai_api_key;
+  const settings = await chrome.storage.local.get(['jra_api_key', 'api_provider', 'api_base_url', 'api_model']);
+  const apiKey = settings.jra_api_key;
   const provider = settings.api_provider || 'openai';
 
   if (!apiKey) {
@@ -15,15 +15,24 @@ async function analyzeWithLLM(data) {
   }
 
   // 2. Construct Prompts
-  const systemPrompt = `You are an expert Career Coach and Job Analyzer. 
-Your goal is to extract key information from job descriptions and provide a quick summary.
-Output strictly in valid JSON format with the following schema:
+  const systemPrompt = `You are an expert Career Coach and Tech Recruiter.
+Your goal is to analyze job descriptions and provide structured insights.
+Output strictly in valid JSON format with the following 3 sections:
+
+1. "basic_info": Extract these fields independently from the text: "title", "location", "salary", "tech_stack" (list).
+2. "ratings": Provide 0-10 scores for:
+   - "difficulty": Application/Interview difficulty (10 = hardest, e.g. Jane Street/Google).
+   - "growth": Growth & Learning opportunity (10 = massive growth).
+3. "analysis":
+   - "summary": A strategic summary of the role (2-3 sentences).
+   - "domain": The primary domain (e.g. "ML Engineering", "Full Stack", "Embedded").
+   - "highlights": A short string listing key benefits or unique points.
+
+Example structure:
 {
-  "summary": "2-3 sentences summarizing the role and company culture",
-  "points": ["Key point 1", "Key point 2", ...],
-  "pros": ["Pro 1", "Pro 2"],
-  "cons": ["Con 1", "Con 2"],
-  "tech_stack": ["Tool 1", "Lang 2", ...]
+  "basic_info": { "title": "...", "location": "...", "salary": "...", "tech_stack": [...] },
+  "ratings": { "difficulty": 8, "growth": 9 },
+  "analysis": { "summary": "...", "domain": "...", "highlights": "..." }
 }
 Do not output markdown code blocks, just the raw JSON string.`;
 
@@ -52,8 +61,7 @@ Do not output markdown code blocks, just the raw JSON string.`;
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
-      ],
-      temperature: 0.7
+      ]
     };
 
   } else if (provider === 'anthropic') {

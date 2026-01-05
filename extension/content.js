@@ -1,4 +1,5 @@
-// JobReviewAssistant Strict Separation Logic
+// JobReviewAssistant UI Controller (Refactored)
+// Relies on parser.js for logic.
 
 // ==========================================
 // PART 1: LOCAL AUTO-PARSER (WaterlooWorks Only)
@@ -11,14 +12,13 @@ class LocalWaterlooOverlay {
     }
 
     checkAndRun() {
-        if (!window.location.href.includes('waterlooworks.uwaterloo.ca') && !window.location.href.includes('JobReviewAssistant')) {
+        if (!window.location.href.includes('waterlooworks.uwaterloo.ca')) {
             return;
         }
 
-        // Persistent parsing function
         const attemptParse = () => {
             const bodyText = document.body.innerText;
-            // Check if JD is present
+            // Basic JD check
             if (!bodyText.includes("JOB POSTING INFORMATION") && !bodyText.includes("Job Posting Information")) {
                 if (this.lastContentHash) {
                     this.removeCard();
@@ -27,223 +27,36 @@ class LocalWaterlooOverlay {
                 return;
             }
 
-            // Simple "hash" to detect content change
             const titleSnippet = bodyText.match(/Job Title:\s*([^\n]+)/)?.[1] || "";
             const currentHash = bodyText.length + "-" + titleSnippet;
 
-            if (currentHash === this.lastContentHash) return; // No change
+            if (currentHash === this.lastContentHash) return;
 
-            // Content changed!
             console.log('[JRA-Local] New JD Content detected. Parsing...', titleSnippet);
             this.lastContentHash = currentHash;
-            this.removeCard(); // Clear old
-            this.parse(bodyText); // Parse new
-            this.injectCard(); // Show new
+            this.removeCard();
+
+            // Delegate to Parser
+            if (typeof WaterlooParser !== 'undefined') {
+                this.data = WaterlooParser.parse(bodyText);
+                this.injectCard();
+            } else {
+                console.error("WaterlooParser not found. Check manifest.");
+            }
         };
 
-        // 1. Try immediately
         attemptParse();
-
-        // 2. Persistent Observer
         let timeout;
-        const observer = new MutationObserver((mutations) => {
+        const observer = new MutationObserver(() => {
             clearTimeout(timeout);
-            timeout = setTimeout(attemptParse, 500); // Debounce check
+            timeout = setTimeout(attemptParse, 500);
         });
-
         observer.observe(document.body, { childList: true, subtree: true });
-        console.log('[JRA-Local] Persistent observer started.');
     }
 
     removeCard() {
         const existing = document.getElementById('jra-local-card');
         if (existing) existing.remove();
-    }
-
-    parse(text) {
-        this.data = {
-            title: null,
-            location: null,
-            duration: null,
-            salary: null,
-            apply_url: null,
-            skills: []
-        };
-
-        // Helper: safe extraction
-        const getBetween = (start, stops, limit = 5000) => {
-            const sIdx = text.indexOf(start);
-            if (sIdx === -1) return null;
-            const contentStart = sIdx + start.length;
-            let end = contentStart + limit;
-            for (const stop of stops) {
-                const stopIdx = text.indexOf(stop, contentStart);
-                if (stopIdx !== -1 && stopIdx < end) end = stopIdx;
-            }
-            return text.substring(contentStart, end).trim();
-        };
-
-        // 1. Title
-        this.data.title = getBetween("Job Title:", ["Note:", "Job Openings:", "Level:"], 100);
-
-        // 2. Location (Simplified)
-        // User Request: Use info under "Job Location" (mostly City) + Arrangement in parens.
-        // We look for "Job - City:" or fallback to "Job Location:" if that exists in other formats.
-        // Current WW format usually has "Job - City:" and "Job - Province/State:"
-
-        let primaryLoc = getBetween("Job - City:", ["Job - Province", "Job - Postal", "Job - Country"], 50);
-        if (!primaryLoc) {
-            // Fallback if they use "Job Location:" header instead
-            primaryLoc = getBetween("Job Location:", ["Job -", "Region"], 100);
-        }
-
-        const arrangementRaw = getBetween("Employment Location Arrangement:", ["Work Term Duration:", "Special Work"], 100);
-        let arrangement = null;
-        if (arrangementRaw) {
-            const lower = arrangementRaw.toLowerCase();
-            if (lower.includes('hybrid')) arrangement = 'Hybrid';
-            else if (lower.includes('remote') || lower.includes('virtual')) arrangement = 'Remote';
-            else if (lower.includes('in-person') || lower.includes('site')) arrangement = 'In-person';
-        }
-
-        if (primaryLoc) {
-            this.data.location = primaryLoc + (arrangement ? ` (${arrangement})` : "");
-        } else {
-            this.data.location = arrangement ? arrangement : "Unknown Location";
-        }
-
-        // 3. Duration (Strict)
-        const rawDuration = getBetween("Work Term Duration:", ["Special Work Term", "Job Summary"], 200);
-        if (rawDuration) {
-            const durMatch = rawDuration.match(/(\d+\s*(?:month|week)s?(?:\s*work\s*term)?)/i);
-            if (durMatch) {
-                this.data.duration = durMatch[1];
-                if (rawDuration.toLowerCase().includes("prefer")) {
-                    this.data.duration += " (Preferred)";
-                }
-            } else {
-                this.data.duration = rawDuration.split('\n')[0].substring(0, 30);
-            }
-        }
-
-        // 4. Salary (Smart Heuristics)
-        const compSection = getBetween("Compensation and Benefits:", ["Targeted Degrees"], 1000) || "";
-        let salaryFound = null;
-
-        // 1. Explicit Hourly
-        const hourlyRegex = /(?:\$|USD|CAD)?\s*(\d{1,3}(?:[,]\d{3})*(?:\.\d{2})?)\s*(?:USD|CAD)?\s*(?:per hour|\/hr)/i;
-        const hourlyMatch = compSection.match(hourlyRegex);
-        if (hourlyMatch) {
-            salaryFound = `$${hourlyMatch[1]}/hr`;
-        } else {
-            // 2. Inference
-            const moneyMatches = compSection.matchAll(/(?:\$|USD|CAD)?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:USD|CAD)?/gi);
-            for (const m of moneyMatches) {
-                const rawVal = m[1].replace(/,/g, '');
-                const val = parseFloat(rawVal);
-                if (isNaN(val)) continue;
-                if (val < 15) continue;
-                if (val > 1900 && val < 2100) continue;
-
-                let interval = "?";
-                if (val < 150) interval = "/hr";
-                else if (val > 20000) interval = "/yr";
-                else if (val > 2000 && val < 10000) interval = "/mo";
-
-                salaryFound = `$${m[1]}${interval}`;
-                break;
-            }
-        }
-        this.data.salary = salaryFound || null;
-
-        // Fallback global salary if no salary found in section
-        if (!this.data.salary) {
-            const globalMatch = text.match(/\$[\d,.]+\s*-?\s*\$[\d,.]+/);
-            if (globalMatch) this.data.salary = globalMatch[0];
-        }
-
-        // 5. Apply URL (Simple First Match)
-        // User Request: Just find the "Application Information" section and grab the FIRST url found.
-        this.data.apply_url = null;
-
-        // We define the section broadly
-        const appSection = getBetween("Application Information", ["Company Information", "Organization:"], 5000);
-
-        if (appSection) {
-            // Find the very first http/https link in this block
-            // \S+ grabs non-whitespace characters (including query params)
-            const match = appSection.match(/(https?:\/\/[^\s"'<>]+)/i);
-            if (match) {
-                this.data.apply_url = match[1];
-            }
-        }
-
-        // 6. Tech Stack (Massive Expansion)
-        this.data.skills = [];
-        const skillsSection = getBetween("Required Skills:", ["Eligible applicants must:", "Compensation and Benefits"], 5000)
-            || getBetween("Qualifications:", ["Eligible applicants must:", "Compensation and Benefits"], 5000);
-
-        if (skillsSection) {
-            const keywords = [
-                // === Languages ===
-                "Python", "Java", "C++", "C", "C#", "JavaScript", "JS", "TypeScript", "TS", "HTML", "CSS", "SQL", "NoSQL",
-                "Go", "Golang", "Rust", "Swift", "Kotlin", "PHP", "Ruby", "Matlab", "R", "Scala", "Dart", "Lua", "Perl",
-                "Haskell", "Elixir", "Erlang", "Clojure", "F#", "Groovy", "Julia", "Assembly", "Bash", "Shell", "PowerShell",
-                "VBA", "Objective-C", "Solidity",
-
-                // === Frameworks (Web/Mobile/Desktop) ===
-                "React", "React.js", "React Native", "Angular", "Vue", "Vue.js", "Next.js", "Nuxt.js", "Svelte",
-                "Node", "Node.js", "Express", "NestJS", "Django", "Flask", "FastAPI", "Spring", "Spring Boot",
-                "ASP.NET", ".NET", ".NET Core", "Entity Framework", "Rails", "Ruby on Rails", "Laravel", "Symfony",
-                "CodeIgniter", "GraphQL", "Apollo", "Tailwind", "Bootstrap", "Material UI", "Chakra UI", "Sass", "Less",
-                "jQuery", "Ember", "Backbone", "Redux", "MobX", "Flutter", "Ionic", "Xamarin", "Cordova", "Electron", "Swing", "JavaFX", "WPF", "Qt",
-
-                // === Databases ===
-                "PostgreSQL", "Postgres", "MySQL", "MariaDB", "SQLite", "Oracle", "SQL Server", "MSSQL",
-                "MongoDB", "Mongo", "Cassandra", "Redis", "Elasticsearch", "DynamoDB", "Firestore", "Firebase",
-                "CouchDB", "Neo4j", "Realm", "Supabase",
-
-                // === Cloud & DevOps ===
-                "AWS", "Amazon Web Services", "Azure", "GCP", "Google Cloud", "Heroku", "Vercel", "Netlify", "DigitalOcean",
-                "Docker", "Kubernetes", "K8s", "Terraform", "Ansible", "Puppet", "Chef", "Vagrant",
-                "Jenkins", "GitLab CI", "CircleCI", "Travis CI", "GitHub Actions", "TeamCity", "Bamboo",
-                "Git", "GitHub", "GitLab", "Bitbucket", "SVN", "Mercurial",
-                "Nginx", "Apache", "Kafka", "RabbitMQ", "ActiveMQ", "SQS", "SNS",
-
-                // === AI / Data ===
-                "Pandas", "NumPy", "SciPy", "Matplotlib", "Seaborn", "Scikit-learn", "Sklearn",
-                "PyTorch", "TensorFlow", "Keras", "Opencv", "NLP", "LLM", "GPT", "Bert", "Hugging Face",
-                "Spark", "Hadoop", "Databricks", "Snowflake", "BigQuery", "Redshift", "Tableau", "Power BI", "Looker",
-                "Airflow", "dbt", "Excel",
-
-                // === Tools & Testing ===
-                "Jira", "Confluence", "Trello", "Asana", "Notion", "Slack", "Teams", "Zoom",
-                "Figma", "Sketch", "Adobe XD", "Photoshop", "Illustrator",
-                "Selenium", "Cypress", "Playwright", "Jest", "Mocha", "Chai", "Junit", "TestNG", "Pytest", "RSpec",
-                "Postman", "Insomnia", "Swagger", "OpenAPI",
-                "Linux", "Unix", "Ubuntu", "CentOS", "RedHat", "Windows", "MacOS", "Android", "iOS", "Unity", "Unreal Engine"
-            ];
-
-            const lowerSection = skillsSection.toLowerCase();
-            this.data.skills = keywords.filter(k => {
-                // Escape special regex chars like +, #, .
-                const escaped = k.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-
-                // Special handling for keywords
-                if (k === 'C++') return lowerSection.includes('c++');
-                if (k === 'C#') return lowerSection.includes('c#');
-                if (k === '.NET') return lowerSection.includes('.net');
-                if (k === 'Go') return lowerSection.match(/\bgo\b/); // Strict 'go'
-                if (k === 'C') return lowerSection.match(/\bc\b/) && !lowerSection.includes('c++') && !lowerSection.includes('c#'); // Strict 'C'
-
-                // General strict word boundary match
-                const regex = new RegExp(`\\b${escaped.toLowerCase()}\\b`, 'i');
-                return regex.test(lowerSection);
-            });
-
-            // Deduplicate (e.g. "React" and "React.js" -> keep simplified if possible, or just unique)
-            this.data.skills = [...new Set(this.data.skills)];
-        }
     }
 
     injectCard() {
@@ -304,22 +117,16 @@ class LocalWaterlooOverlay {
             startX = e.clientX;
             startY = e.clientY;
 
-            // Get computed style numbers
             const rect = el.getBoundingClientRect();
-            // We need to convert from 'right' positioning to 'left/top' for dragging to work well
-            // Or just modify transform. Let's use left/top absolute.
-
-            // Reset right to auto and set explicit left/top
             if (el.style.right) {
                 el.style.left = rect.left + 'px';
                 el.style.top = rect.top + 'px';
                 el.style.right = 'auto';
             }
-
             initialLeft = parseInt(el.style.left || rect.left);
             initialTop = parseInt(el.style.top || rect.top);
-
             header.style.cursor = 'grabbing';
+            e.preventDefault(); // Prevent text selection
         });
 
         document.addEventListener('mousemove', (e) => {
@@ -332,7 +139,7 @@ class LocalWaterlooOverlay {
 
         document.addEventListener('mouseup', () => {
             isDragging = false;
-            header.style.cursor = 'move';
+            if (header) header.style.cursor = 'move';
         });
     }
 }
@@ -347,18 +154,15 @@ class AIWidget {
         this.provider = 'openai';
         this.baseUrl = 'https://api.openai.com/v1';
         this.model = 'gpt-4o-mini';
-
         this.init();
     }
 
     async init() {
-        // Load settings first
-        const settings = await chrome.storage.local.get(['openai_api_key', 'api_provider', 'api_base_url', 'api_model']);
-        this.apiKey = settings.openai_api_key;
+        const settings = await chrome.storage.local.get(['jra_api_key', 'api_provider', 'api_base_url', 'api_model']);
+        this.apiKey = settings.jra_api_key;
         this.provider = settings.api_provider || 'openai';
         this.baseUrl = settings.api_base_url || this.baseUrl;
         this.model = settings.api_model || this.model;
-
         this.injectUI();
         this.setupListeners();
     }
@@ -368,12 +172,13 @@ class AIWidget {
 
         const container = document.createElement('div');
         container.id = 'jra-ai-widget';
+        // Note: jra-ai-card is purely hidden by default via inline style to prevent FOUC "two buttons" glitch
         container.innerHTML = `
             <!-- Floating Action Button -->
             <button id="jra-ai-fab" title="Analyze Job with AI">✨</button>
 
             <!-- Main Card (Hidden) -->
-            <div id="jra-ai-card">
+            <div id="jra-ai-card" style="display: none;">
                 <div class="jra-card-header">
                     <span>AI Analysis</span>
                     <div>
@@ -384,38 +189,39 @@ class AIWidget {
 
                 <div class="jra-card-content">
                     
-                    <!-- View: Settings (Default if no key) -->
+                    <!-- View: Settings -->
                     <div id="jra-view-settings" class="${this.apiKey ? 'hidden' : ''}">
                         <div class="jra-settings-form">
                             <div class="jra-field">
-                                <label>Provider</label>
-                                <select id="jra-input-provider" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 5px;">
-                                    <option value="openai" ${this.provider === 'openai' ? 'selected' : ''}>OpenAI</option>
-                                    <option value="anthropic" ${this.provider === 'anthropic' ? 'selected' : ''}>Claude (Anthropic)</option>
-                                    <option value="gemini" ${this.provider === 'gemini' ? 'selected' : ''}>Gemini (Google)</option>
-                                    <option value="custom" ${this.provider === 'custom' ? 'selected' : ''}>Custom (OpenAI Compatible)</option>
+                                <label style="display:block; margin-bottom:4px; font-weight:500; color:#374151;">Provider</label>
+                                <select id="jra-input-provider" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; background:#fff; font-size:14px;">
+                                    <option value="openai" ${this.provider === 'openai' ? 'selected' : ''} style="font-size:14px;">OpenAI</option>
+                                    <option value="anthropic" ${this.provider === 'anthropic' ? 'selected' : ''} style="font-size:14px;">Claude (Anthropic)</option>
+                                    <option value="gemini" ${this.provider === 'gemini' ? 'selected' : ''} style="font-size:14px;">Gemini (Google)</option>
+                                    <option value="custom" ${this.provider === 'custom' ? 'selected' : ''} style="font-size:14px;">Custom (OpenAI Compatible)</option>
                                 </select>
                             </div>
 
-                            <div class="jra-field">
-                                <label>API Key (Required)</label>
-                                <input type="password" id="jra-input-key" placeholder="sk-..." value="${this.apiKey || ''}">
+                            <div class="jra-field" style="margin-top:12px;">
+                                <label style="display:block; margin-bottom:4px; font-weight:500; color:#374151;">API Key</label>
+                                <input type="password" id="jra-input-key" placeholder="sk-..." value="${this.apiKey || ''}" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size:14px;">
                             </div>
 
-                            <div class="jra-field ${this.provider === 'custom' ? '' : 'hidden'}" id="jra-group-url">
-                                <label>Base URL</label>
-                                <input type="text" id="jra-input-url" value="${this.baseUrl}">
+                            <div class="jra-field ${this.provider === 'custom' ? '' : 'hidden'}" id="jra-group-url" style="margin-top:12px;">
+                                <label style="display:block; margin-bottom:4px; font-weight:500; color:#374151;">Base URL</label>
+                                <input type="text" id="jra-input-url" value="${this.baseUrl}" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size:14px;">
                             </div>
 
-                            <div class="jra-field">
-                                <label>Model Name</label>
-                                <input type="text" id="jra-input-model" value="${this.model}" placeholder="e.g. gpt-4o-mini">
+                            <div class="jra-field" style="margin-top:12px;">
+                                <label style="display:block; margin-bottom:4px; font-weight:500; color:#374151;">Model Name</label>
+                                <input type="text" id="jra-input-model" value="${this.model}" placeholder="e.g. gpt-4o-mini" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size:14px;">
                             </div>
-                            <button id="jra-btn-save" class="jra-btn jra-btn-primary">Save Settings</button>
+                            
+                            <button id="jra-btn-save" class="jra-btn jra-btn-primary" style="margin-top:20px; width:100%; justify-content:center;">Save Settings</button>
                         </div>
                     </div>
 
-                    <!-- View: Action (Default if key exists) -->
+                    <!-- View: Action -->
                     <div id="jra-view-action" class="${this.apiKey ? '' : 'hidden'}">
                         <div id="jra-ai-result-area"></div>
                         
@@ -431,11 +237,21 @@ class AIWidget {
                         <div class="jra-loading-spinner"></div>
                         <div style="text-align:center; color:#6366f1; font-size:12px;">Analyzing with AI...</div>
                     </div>
-
                 </div>
             </div>
         `;
         document.body.appendChild(container);
+
+        // Inject Critical Styles for visibility toggling
+        if (!document.getElementById('jra-style-critical')) {
+            const style = document.createElement('style');
+            style.id = 'jra-style-critical';
+            style.textContent = `
+                 .hidden { display: none !important; } 
+                 #jra-ai-card.visible { display: block !important; }
+             `;
+            document.head.appendChild(style);
+        }
     }
 
     setupListeners() {
@@ -443,7 +259,6 @@ class AIWidget {
         const providerSelect = document.getElementById('jra-input-provider');
         const urlGroup = document.getElementById('jra-group-url');
 
-        // Provider Change
         if (providerSelect) {
             providerSelect.addEventListener('change', (e) => {
                 const val = e.target.value;
@@ -455,22 +270,19 @@ class AIWidget {
             });
         }
 
-        // FAB Toggle
         document.getElementById('jra-ai-fab').addEventListener('click', () => {
+            // Toggling class 'visible' which sets display: block !important
             card.classList.toggle('visible');
         });
 
-        // Close
         document.getElementById('jra-btn-close').addEventListener('click', () => {
             card.classList.remove('visible');
         });
 
-        // Settings Toggle
         document.getElementById('jra-btn-settings').addEventListener('click', () => {
             this.toggleView('settings');
         });
 
-        // Save Settings
         document.getElementById('jra-btn-save').addEventListener('click', async () => {
             const provider = providerSelect.value;
             const key = document.getElementById('jra-input-key').value.trim();
@@ -484,7 +296,7 @@ class AIWidget {
 
             await chrome.storage.local.set({
                 api_provider: provider,
-                openai_api_key: key,
+                jra_api_key: key,
                 api_base_url: url,
                 api_model: model
             });
@@ -494,7 +306,6 @@ class AIWidget {
             this.toggleView('action');
         });
 
-        // Analyze Action
         document.getElementById('jra-btn-analyze').addEventListener('click', () => {
             this.runAnalysis();
         });
@@ -518,7 +329,7 @@ class AIWidget {
         this.toggleView('loading');
 
         try {
-            const text = document.body.innerText.substring(0, 20000); // Capture page text
+            const text = document.body.innerText.substring(0, 20000);
             const response = await chrome.runtime.sendMessage({
                 action: "analyzeWithLLM",
                 data: { text }
@@ -540,55 +351,68 @@ class AIWidget {
 
     renderResult(data) {
         const container = document.getElementById('jra-ai-result-area');
-
         let html = ``;
 
-        if (data.summary) {
+        // 1. Basic Info Grid
+        if (data.basic_info) {
             html += `
-            <div class="jra-ai-result-section">
-                <div class="jra-ai-subtitle">Summary</div>
-                <p class="jra-ai-text">${data.summary}</p>
+            <div class="jra-ai-result-section" style="background:#f9fafb; padding:10px; border-radius:8px; margin-bottom:12px;">
+                <div style="font-weight:600; color:#374151; margin-bottom:6px; font-size:13px;">AI Extracted Info</div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12px;">
+                    <div><span style="color:#6b7280;">Title:</span> <b>${data.basic_info.title || 'N/A'}</b></div>
+                    <div><span style="color:#6b7280;">Salary:</span> <b style="color:#16a34a">${data.basic_info.salary || 'N/A'}</b></div>
+                    <div style="grid-column: span 2;"><span style="color:#6b7280;">Location:</span> <b>${data.basic_info.location || 'N/A'}</b></div>
+                </div>
             </div>`;
         }
 
-        if (data.pros && data.pros.length) {
+        // 2. Ratings (Bars)
+        if (data.ratings) {
+            const diffColor = data.ratings.difficulty > 7 ? '#ef4444' : (data.ratings.difficulty > 4 ? '#f59e0b' : '#10b981');
+            const growthColor = data.ratings.growth > 7 ? '#10b981' : (data.ratings.growth > 4 ? '#f59e0b' : '#6b7280');
+
             html += `
-            <div class="jra-ai-result-section">
-                <div class="jra-ai-subtitle" style="color:#10b981">Pros</div>
-                <ul class="jra-ai-list">
-                    ${data.pros.map(p => `<li>${p}</li>`).join('')}
-                </ul>
+            <div class="jra-ai-result-section" style="margin-bottom:16px;">
+                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:13px; font-weight:500;">Difficulty</span>
+                    <span style="font-size:13px; font-weight:bold; color:${diffColor}">${data.ratings.difficulty}/10</span>
+                 </div>
+                 <div style="background:#e5e7eb; height:6px; border-radius:3px; overflow:hidden;">
+                    <div style="width:${data.ratings.difficulty * 10}%; background:${diffColor}; height:100%;"></div>
+                 </div>
+                 
+                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:6px;">
+                    <span style="font-size:13px; font-weight:500;">Growth Opportunity</span>
+                    <span style="font-size:13px; font-weight:bold; color:${growthColor}">${data.ratings.growth}/10</span>
+                 </div>
+                 <div style="background:#e5e7eb; height:6px; border-radius:3px; overflow:hidden;">
+                    <div style="width:${data.ratings.growth * 10}%; background:${growthColor}; height:100%;"></div>
+                 </div>
             </div>`;
         }
 
-        if (data.cons && data.cons.length) {
+        // 3. Analysis (Summary & Domain)
+        if (data.analysis) {
             html += `
-            <div class="jra-ai-result-section">
-                <div class="jra-ai-subtitle" style="color:#ef4444">Cons</div>
-                <ul class="jra-ai-list">
-                    ${data.cons.map(c => `<li>${c}</li>`).join('')}
-                </ul>
-            </div>`;
+             <div class="jra-ai-result-section">
+                <div class="jra-ai-subtitle">Strategy & Analysis</div>
+                <div style="margin-bottom:8px; font-size:13px;"><span style="background:#eff6ff; color:#1d4ed8; padding:2px 6px; border-radius:4px;">${data.analysis.domain || 'General'}</span></div>
+                <p class="jra-ai-text">${data.analysis.summary || ''}</p>
+                ${data.analysis.highlights ? `<p class="jra-ai-text" style="margin-top:8px; color:#4b5563;">✨ ${data.analysis.highlights}</p>` : ''}
+             </div>`;
+        }
+
+        // Fallback
+        if (!data.basic_info && !data.ratings && !data.analysis && data.summary) {
+            html += `<p class="jra-ai-text">${data.summary}</p>`;
         }
 
         container.innerHTML = html;
-        // Hide the empty placeholder or just prepend
     }
-}
-
-// Global CSS helper for 'hidden'
-if (!document.getElementById('jra-style-overrides')) {
-    const style = document.createElement('style');
-    style.id = 'jra-style-overrides';
-    style.textContent = `.hidden { display: none !important; }`;
-    document.head.appendChild(style);
 }
 
 // Initialize
 if (window.self === window.top) {
-    // 1. Always run AI Widget (Universal)
     new AIWidget();
-
-    // 2. Conditionally run Local Parser (WaterlooWorks)
     new LocalWaterlooOverlay();
 }
