@@ -1,286 +1,100 @@
-# JobReviewAssistant
+# JobReviewAssistant (Job Review Assistant)
+
+[English](#english) | [中文](#chinese)
 
 ---
 
-## Overview
+<a name="english"></a>
+## 🇬🇧 English
 
-**JobReviewAssistant** is a local-first, user-triggered job posting analysis system.
+### Overview
+**JobReviewAssistant** is a privacy-focused, dual-mode browser extension for analyzing job postings.
+It features two distinct modes:
+1.  **Local Auto-Parser (Code Mode):** Automatically detects WaterlooWorks job postings and instantly displays a banner with key details (Salary, Duration, Location) extracted via pure code logic. Zero API calls, zero latency.
+2.  **AI Analysis (LLM Mode):** A universal, manual-trigger widget that allows you to analyze ANY job posting using your own LLM API Key (OpenAI-compatible).
 
-It analyzes a single job posting that the user is actively viewing in their browser and produces a structured, explainable evaluation using a Large Language Model (LLM).
+### Features
+*   **Privacy First:** API Keys are stored locally in your browser. All analysis happens on your machine or via direct API calls you control.
+*   **Dual Architecture:** Strict separation between the lightweight local parser and the powerful AI analyzer.
+*   **Aggressive Overlay:** Uses maximum Z-Index to ensure the tool is visible even on complex enterprise portals like WaterlooWorks.
+*   **Customizable AI:** Support for any OpenAI-compatible provider (OpenAI, Anthropic via proxy, Local LLMs, etc.) by configuring the Base URL and Model Name.
 
-This project is explicitly designed as:
-- non-crawling
-- non-automated
-- local-first
-- schema-driven
-- explainable
+### Project Structure
+```
+jobreviewassistant
+├── extension/          # Chrome Extension (Frontend)
+│   ├── manifest.json
+│   ├── content.js      # Core logic (Overlay & Widget)
+│   ├── content.css     # Styles
+│   └── popup.html      # Status page
+├── backend/            # Local Analysis Service (Optional for Code Mode)
+│   ├── server.py       # FastAPI Entrypoint
+│   ├── analyzer.py     # Logic Router
+│   └── debug_logs/     # Separate logs for Code vs LLM
+└── docs/
+```
 
-It is a decision-support tool, not an automation agent.
-
----
-
-## System Architecture
-
-The system consists of two independent components.
-
-### 1. Browser Extension (Chromium-based)
-
-- Runs on Chrome / Edge using Manifest V3
-- Injects a content script into job posting pages
-- Extracts job-related text from the DOM
-- Sends extracted data to a local analysis service
-- Displays structured analysis results to the user
-
-### 2. Local Analysis Backend
-
-- Runs on localhost
-- Receives job posting data as JSON
-- Analyzes the posting using an LLM (or a heuristic placeholder)
-- Returns strictly validated JSON output
-- Caches analysis results locally using SQLite
-
-The browser extension is not published to any browser store and is loaded locally via developer mode.
-
----
-
-## Mandatory Design Constraints
-
-### The browser extension MUST NOT:
-- Crawl or iterate through job listings
-- Run autonomously or on a schedule
-- Store or handle user credentials
-- Contain any LLM API keys
-
-### The browser extension MUST:
-- Only run when explicitly triggered by the user
-- Only analyze the currently viewed job posting
-- Extract data via DOM access, not network scraping
-
-### The backend MUST:
-- Enforce a strict JSON output schema
-- Reject or repair malformed LLM outputs
-- Cache results locally
-- Expose exactly one API endpoint at POST /analyze
+### Setup & Usage
+1.  **Backend (Optional for full features):**
+    ```bash
+    cd backend
+    pip install -r requirements.txt
+    python server.py
+    ```
+2.  **Extension:**
+    *   Open `chrome://extensions/`
+    *   Enable "Developer Mode"
+    *   "Load Unpacked" -> Select `extension/` folder.
+3.  **Use It:**
+    *   **WaterlooWorks:** Open a job application. The **Top Banner** should appear automatically.
+    *   **Any Site:** Click the **Purple ✨ Button** (bottom-right). Enter your API Key in the settings, then click "Generate Analysis".
 
 ---
 
-## Repository Structure (REQUIRED)
+<a name="chinese"></a>
+## 🇨🇳 中文 (Chinese)
 
-The project must follow this exact directory structure:
+### 简介
+**JobReviewAssistant** 是一个注重隐私的双模式浏览器插件，用于辅助分析职位描述（JD）。
+它包含两种独立模式：
+1.  **本地自动解析 (纯代码模式):** 自动检测 WaterlooWorks 的职位页面，并通过纯代码逻辑提取关键信息（薪资、时长、地点），并在顶部显示横幅。**无需 API Key，零延迟，完全本地运行。**
+2.  **AI 深度分析 (LLM 模式):** 一个通用的悬浮组件。你可以在任意招聘网站点击右下角的按钮，配置自己的 API Key，让 AI 为你生成深度分析报告（包括技术栈、优缺点、总结）。
 
-jobreviewassistant  
-├── README.md  
-├── .gitignore  
-│  
-├── extension  
-│   ├── manifest.json  
-│   ├── background.js  
-│   ├── content.js  
-│   ├── popup.html  
-│   ├── popup.js  
-│   ├── popup.css  
-│   └── icons  
-│       └── icon.png  
-│  
-├── backend  
-│   ├── server.py  
-│   ├── analyzer.py  
-│   ├── prompt.py  
-│   ├── schema.py  
-│   ├── storage.py  
-│   └── requirements.txt  
-│  
-└── docs  
-    └── architecture.md  
+### 核心特性
+*   **隐私优先:** API Key 仅保存在你的浏览器本地。所有分析均由你掌控。
+*   **双架构设计:** 轻量级的本地解析器与强大的 AI 分析器完全解耦，互不依赖。
+*   **强力覆盖:** 使用最高层级 Z-Index，确保插件在 WaterlooWorks 等复杂企业内网中也能正常显示，不被弹窗遮挡。
+*   **自定义模型:** 支持任意兼容 OpenAI 格式的接口（如 OpenAI, DeepSeek, 本地 LLM 等），可自定义 Base URL 和模型名称。
 
----
+### 目录结构
+```
+jobreviewassistant
+├── extension/          # Chrome 插件前端
+│   ├── manifest.json
+│   ├── content.js      # 核心逻辑 (包含本地解析器和 AI 组件)
+│   ├── content.css     # 样式文件
+│   └── popup.html      # 状态简介页
+├── backend/            # 本地后端服务
+│   ├── server.py       # FastAPI 服务入口
+│   ├── analyzer.py     # 分析逻辑路由
+│   └── debug_logs/     # 日志 (区分纯代码和 LLM 日志)
+└── docs/
+```
 
-## Browser Extension Specification
-
-### Platform
-
-- Chromium-based browsers only (Chrome, Edge)
-- Manifest Version 3
-
-### manifest.json Requirements
-
-- Declare manifest_version as 3
-- Follow the minimal-permission principle
-- Permissions must include:
-  - activeTab
-  - storage
-- Host permissions must include:
-  - the target job site domain (placeholder allowed)
-  - http://localhost:8787/*
-- Must register:
-  - one content script
-  - one background service worker
-  - one popup UI
+### 安装与使用
+1.  **后端服务 (推荐开启):**
+    ```bash
+    cd backend
+    pip install -r requirements.txt
+    python server.py
+    ```
+2.  **安装插件:**
+    *   打开 Chrome 扩展管理页 `chrome://extensions/`
+    *   开启右上角的 "开发者模式" (Developer Mode)
+    *   点击 "加载已解压的扩展程序" (Load Unpacked) -> 选择本项目中的 `extension/` 文件夹。
+3.  **开始使用:**
+    *   **WaterlooWorks 场景:** 打开具体的职位申请页。插件会自动识别并弹出顶部的**信息横幅**。
+    *   **通用场景:** 在任意页面点击右下角的**紫色 ✨ 按钮**。首次使用需并在组件内输入 API Key，然后点击 "Generate Analysis" 生成分析。
 
 ---
-
-## Content Script (content.js)
-
-### Responsibilities
-
-- Extract job-related content from the current page DOM
-- Output a normalized object containing:
-  - url
-  - title
-  - company
-  - raw_text
-
-### Implementation Rules
-
-- Use multiple fallback DOM selectors
-- If structured extraction fails, fall back to cleaned document.body.innerText
-- Perform no network requests
-- Respond only to explicit extension messages
-
----
-
-## Background Script (background.js)
-
-### Responsibilities
-
-- Act as a network proxy for the extension
-- Forward job data to the backend
-- Return analysis results to the UI
-
-### Implementation Rules
-
-- Use fetch to call POST /analyze on localhost
-- Handle errors gracefully
-- Maintain no long-term state
-
----
-
-## Extension UI (popup.html / popup.js)
-
-### Responsibilities
-
-- Provide a single button labeled “Analyze current job”
-- Display returned analysis results
-- Show loading and error states
-
-The UI must not contain:
-- model logic
-- prompt logic
-- business logic
-
----
-
-## Backend Specification
-
-### Technology
-
-- Python 3.10 or higher
-- FastAPI
-- Server port 8787
-
-### API Contract
-
-Endpoint:  
-POST /analyze
-
-Request body fields:
-- url
-- title
-- company
-- raw_text
-
-Response:
-- Must strictly conform to the JSON schema defined in schema.py
-
----
-
-## Analysis Logic
-
-### Prompt (prompt.py)
-
-The prompt must:
-- Define a clear evaluation rubric
-- Explain each scoring dimension
-- Instruct the model to output JSON only
-- Match schema field names exactly
-
----
-
-## Output Schema (schema.py)
-
-The schema must include at least the following fields:
-
-- role_type
-- difficulty (integer from 1 to 5)
-- difficulty_rationale (list of strings)
-- tech_stack
-  - languages
-  - frameworks
-  - tools
-- responsibilities_summary (list of strings)
-- requirements_summary (list of strings)
-- resume_value (integer from 1 to 5)
-- risk_flags
-  - flag
-  - evidence
-- overall_notes
-
-Schema validation must be enforced before returning results.
-
----
-
-## Analyzer (analyzer.py)
-
-### Responsibilities
-
-- Assemble prompt and job data
-- Call the LLM (provider-agnostic)
-- Parse model output
-- Validate against schema
-- Retry or repair output if validation fails
-
-Switching LLM providers must require changes only in this file.
-
----
-
-## Storage (storage.py)
-
-- Use SQLite
-- Cache analysis results by job URL hash or content hash
-- Store:
-  - analysis result
-  - timestamp
-  - prompt version
-- On cache hit, return stored result without calling the model
-
----
-
-## Development Workflow
-
-1. Start the backend service
-2. Load the browser extension via developer mode
-3. Open a job posting page
-4. Click the extension icon
-5. Click “Analyze current job”
-
----
-
-## Explicit Non-Goals
-
-- Automated crawling
-- Resume submission
-- Credential management
-- Cloud deployment
-- Multi-user support
-
----
-
-## Philosophy
-
-JobReviewAssistant is a job decision support tool, not an automation system.
-
-All analysis is:
-- user-triggered
-- local-first
-- explainable
-- auditable
+**Disclaimer:** This tool is for personal decision support only. Use responsibly.

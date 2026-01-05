@@ -43,6 +43,8 @@ Thumbs.db
 
 # Logs
 *.log
+backend/debug_logs/
+
 
 # Secrets
 .env.local

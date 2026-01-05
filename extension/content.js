@@ -14,13 +14,33 @@ class LocalWaterlooOverlay {
             return;
         }
 
-        const bodyText = document.body.innerText;
-        // Check for specific JD marker
-        if (bodyText.includes("JOB POSTING INFORMATION") || bodyText.includes("Job Posting Information")) {
-            console.log('[JRA-Local] JD Marker found. Parsing...');
-            this.parse(bodyText);
-            this.injectBanner();
-        }
+        const runIfFound = () => {
+            const bodyText = document.body.innerText;
+            if (bodyText.includes("JOB POSTING INFORMATION") || bodyText.includes("Job Posting Information")) {
+                console.log('[JRA-Local] JD Marker found. Parsing...');
+                this.parse(bodyText);
+                this.injectBanner();
+                return true;
+            }
+            return false;
+        };
+
+        // 1. Try immediately
+        if (runIfFound()) return;
+
+        // 2. Observe for dynamic content (common in SPAs/Portals)
+        console.log('[JRA-Local] Marker not found yet, observing changes...');
+        const observer = new MutationObserver((mutations) => {
+            if (runIfFound()) {
+                observer.disconnect();
+                console.log('[JRA-Local] Observer matches found, disconnected.');
+            }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        // Timeout to stop observing after 10s to save resources
+        setTimeout(() => observer.disconnect(), 10000);
     }
 
     parse(text) {
