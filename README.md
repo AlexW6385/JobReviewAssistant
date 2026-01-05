@@ -1,100 +1,71 @@
-# JobReviewAssistant (Job Review Assistant)
+# JobReviewAssistant (Client-Side Edition)
 
-[English](#english) | [中文](#chinese)
+A powerful **Chrome Extension** that enhances your WaterlooWorks job search experience with **Instant Local Parsing** and **Multi-Provider AI Analysis** (OpenAI, Claude, Gemini).
+
+**🚀 Zero Setup Required. No Python. No Servers.**
+
+## ✨ Features
+
+### 1. ⚡ Local Auto-Parser (Instant)
+*   **Zero Latency:** Runs entirely in your browser using JavaScript.
+*   **Smart Extraction:**
+    *   **Salary:** Heuristically infers hourly/yearly rates (e.g., "$300,000" -> "$300,000/yr").
+    *   **Tech Stack:** Detects 120+ keywords (React, Docker, AWS, etc.) and tags them colorfully.
+    *   **Location:** Simplifies to "City (Arrangement)".
+    *   **Apply URL:** Robustly grabs the direct application link.
+*   **UI:** Injects a draggable info card directly onto the job page.
+
+### 2. 🤖 AI Analysis (On-Demand)
+*   **Multi-Provider Support:** Choose your preferred AI:
+    *   🟢 **OpenAI** (GPT-4o, GPT-3.5)
+    *   🟣 **Anthropic** (Claude 3.5 Sonnet, Haiku)
+    *   🔵 **Google** (Gemini 1.5 Flash/Pro)
+*   **Privacy First:** Your API key is stored locally in Chrome (`chrome.storage.local`). The extension communicates *directly* from your browser to the AI provider. No middleman server.
 
 ---
 
-<a name="english"></a>
-## 🇬🇧 English
+## 📥 Installation
 
-### Overview
-**JobReviewAssistant** is a privacy-focused, dual-mode browser extension for analyzing job postings.
-It features two distinct modes:
-1.  **Local Auto-Parser (Code Mode):** Automatically detects WaterlooWorks job postings and instantly displays a banner with key details (Salary, Duration, Location) extracted via pure code logic. Zero API calls, zero latency.
-2.  **AI Analysis (LLM Mode):** A universal, manual-trigger widget that allows you to analyze ANY job posting using your own LLM API Key (OpenAI-compatible).
-
-### Features
-*   **Privacy First:** API Keys are stored locally in your browser. All analysis happens on your machine or via direct API calls you control.
-*   **Dual Architecture:** Strict separation between the lightweight local parser and the powerful AI analyzer.
-*   **Aggressive Overlay:** Uses maximum Z-Index to ensure the tool is visible even on complex enterprise portals like WaterlooWorks.
-*   **Customizable AI:** Support for any OpenAI-compatible provider (OpenAI, Anthropic via proxy, Local LLMs, etc.) by configuring the Base URL and Model Name.
-
-### Project Structure
-```
-jobreviewassistant
-├── extension/          # Chrome Extension (Frontend)
-│   ├── manifest.json
-│   ├── content.js      # Core logic (Overlay & Widget)
-│   ├── content.css     # Styles
-│   └── popup.html      # Status page
-├── backend/            # Local Analysis Service (Optional for Code Mode)
-│   ├── server.py       # FastAPI Entrypoint
-│   ├── analyzer.py     # Logic Router
-│   └── debug_logs/     # Separate logs for Code vs LLM
-└── docs/
-```
-
-### Setup & Usage
-1.  **Backend (Optional for full features):**
+1.  **Clone or Download** this repository.
     ```bash
-    cd backend
-    pip install -r requirements.txt
-    python server.py
+    git clone https://github.com/YourRepo/JobReviewAssistant.git
     ```
-2.  **Extension:**
-    *   Open `chrome://extensions/`
-    *   Enable "Developer Mode"
-    *   "Load Unpacked" -> Select `extension/` folder.
-3.  **Use It:**
-    *   **WaterlooWorks:** Open a job application. The **Top Banner** should appear automatically.
-    *   **Any Site:** Click the **Purple ✨ Button** (bottom-right). Enter your API Key in the settings, then click "Generate Analysis".
+2.  Open Chrome and navigate to `chrome://extensions`.
+3.  Enable **Developer Mode** (top right toggle).
+4.  Click **Load unpacked**.
+5.  Select the `extension` folder from this project.
+6.  **Done!** Go to WaterlooWorks and open a job.
 
 ---
 
-<a name="chinese"></a>
-## 🇨🇳 中文 (Chinese)
+## 🛠 Usage
 
-### 简介
-**JobReviewAssistant** 是一个注重隐私的双模式浏览器插件，用于辅助分析职位描述（JD）。
-它包含两种独立模式：
-1.  **本地自动解析 (纯代码模式):** 自动检测 WaterlooWorks 的职位页面，并通过纯代码逻辑提取关键信息（薪资、时长、地点），并在顶部显示横幅。**无需 API Key，零延迟，完全本地运行。**
-2.  **AI 深度分析 (LLM 模式):** 一个通用的悬浮组件。你可以在任意招聘网站点击右下角的按钮，配置自己的 API Key，让 AI 为你生成深度分析报告（包括技术栈、优缺点、总结）。
+### Local Parser
+1.  Navigate to a standard **WaterlooWorks Job Posting**.
+2.  A **Job Card** will automatically appear at the top right.
+3.  You can drag it around or close it.
 
-### 核心特性
-*   **隐私优先:** API Key 仅保存在你的浏览器本地。所有分析均由你掌控。
-*   **双架构设计:** 轻量级的本地解析器与强大的 AI 分析器完全解耦，互不依赖。
-*   **强力覆盖:** 使用最高层级 Z-Index，确保插件在 WaterlooWorks 等复杂企业内网中也能正常显示，不被弹窗遮挡。
-*   **自定义模型:** 支持任意兼容 OpenAI 格式的接口（如 OpenAI, DeepSeek, 本地 LLM 等），可自定义 Base URL 和模型名称。
-
-### 目录结构
-```
-jobreviewassistant
-├── extension/          # Chrome 插件前端
-│   ├── manifest.json
-│   ├── content.js      # 核心逻辑 (包含本地解析器和 AI 组件)
-│   ├── content.css     # 样式文件
-│   └── popup.html      # 状态简介页
-├── backend/            # 本地后端服务
-│   ├── server.py       # FastAPI 服务入口
-│   ├── analyzer.py     # 分析逻辑路由
-│   └── debug_logs/     # 日志 (区分纯代码和 LLM 日志)
-└── docs/
-```
-
-### 安装与使用
-1.  **后端服务 (推荐开启):**
-    ```bash
-    cd backend
-    pip install -r requirements.txt
-    python server.py
-    ```
-2.  **安装插件:**
-    *   打开 Chrome 扩展管理页 `chrome://extensions/`
-    *   开启右上角的 "开发者模式" (Developer Mode)
-    *   点击 "加载已解压的扩展程序" (Load Unpacked) -> 选择本项目中的 `extension/` 文件夹。
-3.  **开始使用:**
-    *   **WaterlooWorks 场景:** 打开具体的职位申请页。插件会自动识别并弹出顶部的**信息横幅**。
-    *   **通用场景:** 在任意页面点击右下角的**紫色 ✨ 按钮**。首次使用需并在组件内输入 API Key，然后点击 "Generate Analysis" 生成分析。
+### AI Analysis
+1.  Click the floating **✨ (Sparkle)** button in the bottom right.
+2.  Click the **⚙️ (Settings)** icon.
+3.  **Select Provider:** OpenAI, Claude, or Gemini.
+4.  **Enter API Key:** Paste your key.
+5.  Click **Save**.
+6.  Click **✨ Generate Analysis** to get a summary, pros/cons, and rating.
 
 ---
-**Disclaimer:** This tool is for personal decision support only. Use responsibly.
+
+## 🏗 Architecture
+
+The project has moved to a **Serverless Client-Side Architecture** (v3.0).
+
+*   **`content.js`**: The brain. Handles page detection, local parsing, UI injection, and settings management.
+*   **`background.js`**: The messenger. Acts as a secure Service Worker to proxy requests to LLM APIs (OpenAI/Anthropic/Google), avoiding CORS issues.
+*   **Privacy:** All data processing happens on your machine. No data is sent to our servers.
+
+---
+
+## 📜 Privacy & Security
+*   **API Keys:** Stored only in your browser's local storage.
+*   **Job Data:** Only sent to the AI provider you select, and only when you click "Generate".
+*   **Open Source:** You can inspect the code to verify no data exfiltration occurs.

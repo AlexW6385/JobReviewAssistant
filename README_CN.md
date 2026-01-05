@@ -1,84 +1,71 @@
-# JobReviewAssistant (职位分析助手)
+# JobReviewAssistant (纯前端版)
 
-## 概述
+一个强大的 **Chrome 扩展程序**，通过 **本地即时解析** 和 **多模型 AI 分析** (OpenAI, Claude, Gemini) 显著提升你的 WaterlooWorks 求职体验。
 
-**JobReviewAssistant** 是一个注重隐私的双模式浏览器插件，用于辅助分析职位描述（JD）。
+**🚀 零配置。无需 Python。无需服务器。**
 
-它包含两种独立模式：
-1.  **本地自动解析 (纯代码模式 / Auto-Parser):** 自动检测 WaterlooWorks 的职位页面，并通过纯代码逻辑即时提取关键信息（薪资、时长、地点），并在顶部显示横幅。**无需 API Key，零延迟，完全本地运行。**
-2.  **AI 深度分析 (LLM 模式 / AI Analysis):** 一个通用的悬浮组件。可在任意招聘网站点击右下角的按钮，配置你自己的 API Key (OpenAI 兼容)，让 AI 为你生成深度分析报告（包括技术栈、优缺点、总结）。
+## ✨ 主要功能
 
----
+### 1. ⚡ 本地自动解析器 (零延迟)
+*   **纯前端运行:** 所有逻辑都在浏览器 JS 中完成，秒开。
+*   **智能提取:**
+    *   **薪资:** 自动推断时薪/年薪 (例如 "$300,000" -> "$300,000/yr")。
+    *   **技术栈:** 识别 120+ 种技术关键词 (React, Docker, AWS 等) 并高亮显示。
+    *   **地点:** 简化为 "城市 (办公模式)"，例如 "Toronto (Hybrid)"。
+    *   **申请链接:** 精准抓取直投链接。
+*   **UI:** 在职位页面直接注入可拖拽的信息卡片。
 
-## 核心特性
-
-*   **隐私优先:** API Key 仅保存在你的浏览器本地存储中。所有分析均由你掌控，不会上传到任何第三方服务器（除了你调用的 LLM API）。
-*   **双架构设计:** 轻量级的本地解析器与强大的 AI 分析器完全解耦，互不依赖。
-*   **强力覆盖:** 使用最高层级 Z-Index (2147483647)，确保插件在 WaterlooWorks 等复杂企业内网中也能正常显示，不被弹窗遮挡。
-*   **自定义模型:** 支持任意兼容 OpenAI 格式的接口（如 OpenAI, DeepSeek, 本地 LLM 等），可自定义 Base URL 和模型名称。
-
----
-
-## 目录结构
-
-```
-jobreviewassistant
-├── extension/          # Chrome 插件前端
-│   ├── manifest.json
-│   ├── content.js      # 核心逻辑 (包含本地解析器和 AI 组件)
-│   ├── content.css     # 样式文件
-│   └── popup.html      # 状态简介页
-├── backend/            # 本地后端服务 (可选，用于本地代码解析日志等)
-│   ├── server.py       # FastAPI 服务入口
-│   ├── analyzer.py     # 分析逻辑路由
-│   └── debug_logs/     # 日志 (区分纯代码和 LLM 日志)
-└── docs/
-```
+### 2. 🤖 AI 深度分析 (按需)
+*   **多模型支持:** 自由选择你喜欢的 AI:
+    *   🟢 **OpenAI** (GPT-4o, GPT-3.5)
+    *   🟣 **Anthropic** (Claude 3.5 Sonnet, Haiku)
+    *   🔵 **Google** (Gemini 1.5 Flash/Pro)
+*   **隐私优先:** API Key 仅存储在你的 Chrome 本地 (`chrome.storage.local`)。扩展程序直接从浏览器向 AI 厂商发送请求，不经过任何中间服务器。
 
 ---
 
-## 安装与使用
+## 📥 安装指南
 
-### 1. 启动后端服务 (可选)
-虽非必须，但推荐启动后端以获得完整的日志记录功能。
-```bash
-cd backend
-pip install -r requirements.txt
-python server.py
-```
-> 服务将在 `localhost:8787` 启动。
-
-### 2. 安装浏览器插件
-1.  在 Chrome/Edge 中打开扩展管理页: `chrome://extensions/`
-2.  开启右上角的 "**开发者模式 (Developer Mode)**"
-3.  点击 "**加载已解压的扩展程序 (Load Unpacked)**"
-4.  选择本项目中的 `extension/` 文件夹。
-
-### 3. 开始使用
-
-#### 场景 A: WaterlooWorks (本地自动解析)
-1.  登录 WaterlooWorks 并打开任意职位详情页。
-2.  插件会自动检测到 `JOB POSTING INFORMATION`。
-3.  页面顶部会自动弹出一个**信息横幅**，显示薪资、地点和工期。
-    *   *注: 即使通过弹窗打开 JD，插件也能检测到。*
-
-#### 场景 B: 通用 AI 分析 (任意网站)
-1.  在任意招聘网站 (如 LinkedIn, Indeed, 或 WW)。
-2.  点击页面右下角的**紫色悬浮按钮 (✨)**。
-3.  **首次设置:** 在弹出的卡片中点击设置图标，输入你的 API Key (以及可选的 Base URL / 模型名称)，点击保存。
-4.  点击 "**Generate Analysis**"。
-5.  稍等片刻，AI 将生成一份包含 Pros/Cons、技术栈和总结的报告。
+1.  **克隆或下载** 本项目。
+    ```bash
+    git clone https://github.com/YourRepo/JobReviewAssistant.git
+    ```
+2.  打开 Chrome 浏览器，访问 `chrome://extensions`。
+3.  开启右上角的 **开发者模式 (Developer Mode)**。
+4.  点击 **加载已解压的扩展程序 (Load unpacked)**。
+5.  选择本项目中的 `extension` 文件夹。
+6.  **完成!** 现在去 WaterlooWorks 打开一个职位试试吧。
 
 ---
 
-## 隐私说明
+## 🛠 使用说明
 
-*   **API Key:** 仅存储在浏览器的 `chrome.storage.local` 中，卸载插件即清除。
-*   **日志:** 如果启动了后端服务，分析日志会保存在 `backend/debug_logs/` 中，且 API Key 会被自动脱敏处理。
-*   **Git:** 日志目录已被添加至 `.gitignore`，不会被提交。
+### 本地解析
+1.  打开任意 **WaterlooWorks 职位详情页**。
+2.  右上角会自动弹出一个 **Job Card** 信息卡片。
+3.  你可以随意拖拽或关闭它。
+
+### AI 分析
+1.  点击页面右下角的悬浮 **✨ (Sparkle)** 按钮。
+2.  点击 **⚙️ (设置)** 图标。
+3.  **选择模型:** OpenAI, Claude, 或 Gemini。
+4.  **输入 Key:** 粘贴你的 API Key。
+5.  点击 **保存**。
+6.  点击 **✨ Generate Analysis** 生成摘要、优缺点分析和推荐指数。
 
 ---
 
-## 免责声明
+## 🏗 架构说明
 
-本工具仅作为个人求职决策辅助工具，请合规使用。
+本项目已升级为 **无服务器纯前端架构** (v3.0)。
+
+*   **`content.js`**: 核心大脑。负责页面检测、本地解析、UI 渲染和设置管理。
+*   **`background.js`**: 信使。作为 Chrome Service Worker 安全地代理转发请求给 LLM APIs (OpenAI/Anthropic/Google)，解决跨域问题。
+*   **隐私:** 所有数据处理都在你的本地机器上完成。我们没有任何后台服务器。
+
+---
+
+## 📜 隐私与安全
+*   **API Keys:** 仅保存在你浏览器的本地存储中。
+*   **职位数据:** 仅在你点击“生成”时发送给你选择的 AI 提供商。
+*   **开源:** 代码完全公开，你可以随时审查以确保没有数据泄露。

@@ -162,57 +162,20 @@ class LocalWaterlooOverlay {
             if (globalMatch) this.data.salary = globalMatch[0];
         }
 
-        // 5. Apply URL (DOM-based Reliability)
-        // Regex on innerText can be truncated by line wraps. We try to find the actual <a> tag or text node in DOM.
+        // 5. Apply URL (Simple First Match)
+        // User Request: Just find the "Application Information" section and grab the FIRST url found.
         this.data.apply_url = null;
-        try {
-            // Strategy A: Find the label in DOM, then find a link near it.
-            // XPath: look for text node containing the label
-            const iterator = document.evaluate(
-                "//*[contains(text(), 'If By Website, Go To:')]",
-                document, null, XPathResult.ANY_TYPE, null
-            );
 
-            let node = iterator.iterateNext();
-            if (node) {
-                // Look for an <a> tag inside this node or its siblings
-                const container = node.parentElement ? node.parentElement.parentElement : document.body;
-                // Search specifically near this area (limit scope to avoid bad matches)
-                // We pick the first http link that appears *after* the label in the HTML source order if possible, 
-                // or just the closest one.
+        // We define the section broadly
+        const appSection = getBetween("Application Information", ["Company Information", "Organization:"], 5000);
 
-                // Simple attempt: Check if the node itself has an <a> child?
-                let link = node.querySelector('a');
-
-                // If not, check next sibling
-                if (!link && node.nextElementSibling) {
-                    link = node.nextElementSibling.querySelector('a') || (node.nextElementSibling.tagName === 'A' ? node.nextElementSibling : null);
-                }
-
-                // If found, use href
-                if (link && link.href && link.href.startsWith('http')) {
-                    this.data.apply_url = link.href;
-                }
+        if (appSection) {
+            // Find the very first http/https link in this block
+            // \S+ grabs non-whitespace characters (including query params)
+            const match = appSection.match(/(https?:\/\/[^\s"'<>]+)/i);
+            if (match) {
+                this.data.apply_url = match[1];
             }
-
-            // Strategy B (Fallback): Regex on full Text but looking for the "If By Website" block specifically
-            if (!this.data.apply_url) {
-                const appSection = getBetween("Application Information", ["Company Information", "Organization:"], 5000);
-                if (appSection) {
-                    // Match http://... until end of line or whitespace
-                    // We permit non-whitespace characters including query params
-                    const match = appSection.match(/If By Website, Go To:[\s\r\n]*\s*(https?:\/\/[^\s"'<>]+)/i);
-                    if (match) {
-                        this.data.apply_url = match[1];
-                    } else {
-                        // Last ditch: any URL in that section
-                        const any = appSection.match(/(https?:\/\/[^\s"'<>]+)/);
-                        if (any) this.data.apply_url = any[1];
-                    }
-                }
-            }
-        } catch (e) {
-            console.error("URL Parse error", e);
         }
 
         // 6. Tech Stack (Massive Expansion)
@@ -381,6 +344,7 @@ class LocalWaterlooOverlay {
 class AIWidget {
     constructor() {
         this.apiKey = null;
+        this.provider = 'openai';
         this.baseUrl = 'https://api.openai.com/v1';
         this.model = 'gpt-4o-mini';
 
@@ -389,8 +353,9 @@ class AIWidget {
 
     async init() {
         // Load settings first
-        const settings = await chrome.storage.local.get(['openai_api_key', 'api_base_url', 'api_model']);
+        const settings = await chrome.storage.local.get(['openai_api_key', 'api_provider', 'api_base_url', 'api_model']);
         this.apiKey = settings.openai_api_key;
+        this.provider = settings.api_provider || 'openai';
         this.baseUrl = settings.api_base_url || this.baseUrl;
         this.model = settings.api_model || this.model;
 
@@ -423,16 +388,28 @@ class AIWidget {
                     <div id="jra-view-settings" class="${this.apiKey ? 'hidden' : ''}">
                         <div class="jra-settings-form">
                             <div class="jra-field">
+                                <label>Provider</label>
+                                <select id="jra-input-provider" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 5px;">
+                                    <option value="openai" ${this.provider === 'openai' ? 'selected' : ''}>OpenAI</option>
+                                    <option value="anthropic" ${this.provider === 'anthropic' ? 'selected' : ''}>Claude (Anthropic)</option>
+                                    <option value="gemini" ${this.provider === 'gemini' ? 'selected' : ''}>Gemini (Google)</option>
+                                    <option value="custom" ${this.provider === 'custom' ? 'selected' : ''}>Custom (OpenAI Compatible)</option>
+                                </select>
+                            </div>
+
+                            <div class="jra-field">
                                 <label>API Key (Required)</label>
                                 <input type="password" id="jra-input-key" placeholder="sk-..." value="${this.apiKey || ''}">
                             </div>
-                            <div class="jra-field">
+
+                            <div class="jra-field ${this.provider === 'custom' ? '' : 'hidden'}" id="jra-group-url">
                                 <label>Base URL</label>
                                 <input type="text" id="jra-input-url" value="${this.baseUrl}">
                             </div>
+
                             <div class="jra-field">
-                                <label>Model</label>
-                                <input type="text" id="jra-input-model" value="${this.model}">
+                                <label>Model Name</label>
+                                <input type="text" id="jra-input-model" value="${this.model}" placeholder="e.g. gpt-4o-mini">
                             </div>
                             <button id="jra-btn-save" class="jra-btn jra-btn-primary">Save Settings</button>
                         </div>
@@ -463,6 +440,20 @@ class AIWidget {
 
     setupListeners() {
         const card = document.getElementById('jra-ai-card');
+        const providerSelect = document.getElementById('jra-input-provider');
+        const urlGroup = document.getElementById('jra-group-url');
+
+        // Provider Change
+        if (providerSelect) {
+            providerSelect.addEventListener('change', (e) => {
+                const val = e.target.value;
+                if (val === 'custom') {
+                    urlGroup.classList.remove('hidden');
+                } else {
+                    urlGroup.classList.add('hidden');
+                }
+            });
+        }
 
         // FAB Toggle
         document.getElementById('jra-ai-fab').addEventListener('click', () => {
@@ -481,6 +472,7 @@ class AIWidget {
 
         // Save Settings
         document.getElementById('jra-btn-save').addEventListener('click', async () => {
+            const provider = providerSelect.value;
             const key = document.getElementById('jra-input-key').value.trim();
             const url = document.getElementById('jra-input-url').value.trim();
             const model = document.getElementById('jra-input-model').value.trim();
@@ -491,13 +483,15 @@ class AIWidget {
             }
 
             await chrome.storage.local.set({
+                api_provider: provider,
                 openai_api_key: key,
                 api_base_url: url,
                 api_model: model
             });
 
-            this.apiKey = key; // Update local state
-            this.toggleView('action'); // Go to action view
+            this.apiKey = key;
+            this.provider = provider;
+            this.toggleView('action');
         });
 
         // Analyze Action
@@ -533,8 +527,6 @@ class AIWidget {
             if (response.success) {
                 this.renderResult(response.data);
                 this.toggleView('action');
-                // Hide the analyze button after success to show results cleanly? 
-                // Alternatively, keep it for re-roll. Let's keep it but maybe change text.
                 document.getElementById('jra-btn-analyze').innerText = "🔄 Regenerate";
             } else {
                 alert("Error: " + response.error);
@@ -585,7 +577,6 @@ class AIWidget {
 }
 
 // Global CSS helper for 'hidden'
-// In case content.css didn't define .hidden (it was used in old code, let's ensure it works)
 if (!document.getElementById('jra-style-overrides')) {
     const style = document.createElement('style');
     style.id = 'jra-style-overrides';
